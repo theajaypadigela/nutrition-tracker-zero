@@ -1,0 +1,25 @@
+# Dependencies / build
+node_modules/
+dist/
+.wrangler/
+coverage/
+
+# Secrets and local config
+.dev.vars
+.env
+.env.*
+!.env.example
+app/src/config/local.ts
+*.keystore
+*.jks
+!debug.keystore
+keystore.properties
+
+# Migration output
+scripts/migrate-from-mongo/out/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.log

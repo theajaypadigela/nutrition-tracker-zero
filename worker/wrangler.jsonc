@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nutrition-tracker-zero",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-29",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nutrition-zero",
+      // Placeholder until `wrangler d1 create nutrition-zero --binding DB --update-config` (Phase 5).
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    // Optional: overrides the request origin when building Vapi webhook URLs (e.g. a cloudflared tunnel during the spike).
+    "PUBLIC_BASE_URL": ""
+  },
+  "secrets": { "required": ["APP_TOKEN"] }
+}

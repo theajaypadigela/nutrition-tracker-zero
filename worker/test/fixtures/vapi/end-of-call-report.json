@@ -1,0 +1,14 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "timestamp": 1791216180000,
+    "endedReason": "assistant-ended-call",
+    "startedAt": "2026-10-04T14:30:00.000Z",
+    "endedAt": "2026-10-04T14:32:30.000Z",
+    "call": { "id": "__CALL_ID__", "type": "webCall", "status": "ended" },
+    "artifact": {
+      "transcript": "AI: Hi Asha! Quick food check-in. What did you have for breakfast today?\nUser: Three idlis with sambar.\nAI: How many katoris of sambar?\nUser: One.",
+      "messages": []
+    }
+  }
+}

@@ -1,0 +1,2 @@
+# Copy to .dev.vars (git-ignored) for `wrangler dev`.
+APP_TOKEN=dev-app-token-change-me

@@ -1,0 +1,17 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "timestamp": 1791216060000,
+    "call": { "id": "__CALL_ID__", "type": "webCall", "status": "in-progress" },
+    "toolCallList": [
+      {
+        "id": "__TOOL_CALL_ID__",
+        "type": "function",
+        "function": {
+          "name": "save_foods",
+          "arguments": "{\"items\":[{\"name\":\"idli\",\"quantity\":4,\"unit\":\"piece\",\"meal\":\"breakfast\"},{\"name\":\"sambar\",\"quantity\":1,\"unit\":\"katori\",\"meal\":\"breakfast\"},{\"name\":\"rice\",\"quantity\":2,\"unit\":\"katori\",\"meal\":\"lunch\"},{\"name\":\"dal\",\"quantity\":1,\"unit\":\"katori\",\"meal\":\"lunch\"}]}"
+        }
+      }
+    ]
+  }
+}
