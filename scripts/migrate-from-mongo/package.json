@@ -1,0 +1,20 @@
+{
+  "name": "migrate-from-mongo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "tsx migrate.ts",
+    "test": "tsx --test transform.test.ts",
+    "test:e2e": "tsx e2e-local.ts"
+  },
+  "dependencies": {
+    "mongodb": "^6.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "tsx": "^4.23.15"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

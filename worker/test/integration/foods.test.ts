@@ -224,3 +224,24 @@ describe('days and items', () => {
     expect((await api('POST', '/days/2026-10-04/items', { userId: u, body: { items: [{ name: 'x', quantity: 0, unit: 'g' }] } })).status).toBe(400);
   });
 });
+
+describe('POST /maintenance/resolve-pending', () => {
+  it('links imported pending rows to foods that already exist', async () => {
+    const t = tag();
+    const u = await createProfile();
+    await api('POST', '/foods', { body: { displayName: `${t} upma`, baseUnit: 'plate', nutrients: { calories: 250 } } });
+    // Simulate an import: rows written straight to D1 as pending_food, bypassing matching.
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      `INSERT INTO log_items (id, user_id, local_date, raw_name, normalized_name, quantity, unit, status, source, created_at)
+       VALUES (?1, ?2, '2025-01-01', 'Upma', ?3, 1, 'plate', 'pending_food', 'import', '2025-01-01T00:00:00Z')`,
+    )
+      .bind(`mig_${t}`, u, `${t} upma`)
+      .run();
+    const res = await api('POST', '/maintenance/resolve-pending');
+    expect(res.status).toBe(200);
+    expect(res.body.resolvedCount).toBeGreaterThanOrEqual(1);
+    expect((await day(u, '2025-01-01')).items[0]).toMatchObject({ status: 'resolved', nutrients: { calories: 250 } });
+    expect((await api('POST', '/maintenance/resolve-pending', { token: null })).status).toBe(401);
+  });
+});

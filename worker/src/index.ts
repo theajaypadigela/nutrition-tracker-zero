@@ -6,6 +6,7 @@ import { registerCalls } from './routes/calls';
 import { registerDays } from './routes/days';
 import { registerFoods } from './routes/foods';
 import { registerItems } from './routes/items';
+import { registerMaintenance } from './routes/maintenance';
 import { registerMeta } from './routes/meta';
 import { registerProfiles } from './routes/profiles';
 import { registerSettings } from './routes/settings';
@@ -20,6 +21,7 @@ registerDays(router);
 registerItems(router);
 registerFoods(router);
 registerUncached(router);
+registerMaintenance(router);
 
 async function handle(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
