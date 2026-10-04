@@ -1,6 +1,6 @@
 # Nutrition Tracker Zero — rebuild plan
 
-Status: **draft for review**. No code has been written yet.
+Status: **implemented through Phase 4 + Phase 6 tooling** (2026-10-04). Waiting on: the Phase 3 live Vapi spike (needs a Vapi public key), Phase 5 deploy (needs `wrangler login`), and the Phase 6 import run (needs OK to read `MONGODB_URI`). See README.md.
 Old repo (read-only reference, never modified): `/Users/ajay_1/Downloads/project/Nutrition Tracker` (branch `mongo-deployment`, read including uncommitted changes).
 New repo: `/Users/ajay_1/Downloads/project/nutrition-tracker-zero`. `[NEW_REPO_NAME]` was left blank, so this name is a placeholder. Rename the folder before Phase 1 if you want something else.
 
