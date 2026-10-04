@@ -49,6 +49,11 @@ class IncomingCallModule(
 
   /** Returns the accepted-call payload JSON (and clears it), or null if none. */
   @ReactMethod
+  fun cancelAutoRetry() {
+    CallAlarms.cancelRetry(reactApplicationContext)
+  }
+
+  @ReactMethod
   fun consumePendingAnswer(promise: Promise) {
     promise.resolve(IncomingCallStore.consumePendingAnswer(reactApplicationContext))
   }

@@ -112,6 +112,7 @@ class IncomingCallService : Service() {
   private fun onTimeout() {
     val payloadJson = currentPayloadJson ?: "{}"
     IncomingCallStore.addMarker(applicationContext, payloadJson, CallConstants.RESULT_MISSED)
+    CallAlarms.maybeScheduleRetry(applicationContext, payloadJson)
     IncomingCallPayload.fromJson(payloadJson)?.let {
       MissedCallNotificationBuilder.post(applicationContext, it)
     }

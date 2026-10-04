@@ -51,7 +51,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(0, 'network', controller.signal.aborted ? 'The server took too long to answer' : 'Could not reach the server');
   } finally {
     clearTimeout(timer);

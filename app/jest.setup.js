@@ -1,5 +1,5 @@
 /* eslint-env jest */
-/* Mocks so the reminder modules (which import Notifee + AsyncStorage at module load)
+/* Mocks so the call modules (which import Notifee + AsyncStorage at module load)
    can be imported under jest. The enum values mirror @notifee/react-native. */
 
 require('react-native-gesture-handler/jestSetup');
@@ -9,7 +9,7 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 jest.mock('@notifee/react-native', () => {
-  const fn = () => jest.fn();
+  const fn = () => jest.fn(() => Promise.resolve());
   return {
     __esModule: true,
     default: {

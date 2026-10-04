@@ -24,6 +24,9 @@ object CallConstants {
   /** How long "Snooze" on a missed call waits before ringing again. */
   const val SNOOZE_DELAY_MS = 10 * 60 * 1000L
 
+  /** Automatic re-ring after an unanswered scheduled call (PLAN.md §9.1). */
+  const val RETRY_DELAY_MS = 60 * 60 * 1000L
+
   // Broadcast / intent actions.
   const val ACTION_DECLINE = "com.nutritiontrackerzero.incomingcall.ACTION_DECLINE"
   const val ACTION_DISMISS_UI = "com.nutritiontrackerzero.incomingcall.ACTION_DISMISS_UI"
