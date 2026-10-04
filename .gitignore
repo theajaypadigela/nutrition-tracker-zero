@@ -23,3 +23,16 @@ scripts/migrate-from-mongo/out/
 .idea/
 .vscode/
 *.log
+
+# Native build output
+app/android/.gradle/
+app/android/.kotlin/
+app/android/build/
+app/android/app/build/
+app/android/app/.cxx/
+app/android/local.properties
+app/ios/build/
+app/ios/Pods/
+app/ios/.xcode.env.local
+*.xcuserstate
+xcuserdata/

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<!--
+		  Time-Sensitive notifications entitlement. The reminder payloads set
+		  interruptionLevel: 'timeSensitive', which iOS silently downgrades to 'active'
+		  without this — reminders then get held in the Scheduled Summary and suppressed
+		  by Focus, which is indistinguishable from "reminders don't work".
+		  Linked to the target via CODE_SIGN_ENTITLEMENTS in project.pbxproj (both Debug
+		  and Release). Device builds additionally need "Time Sensitive Notifications"
+		  enabled on the App ID; automatic signing adds it on first device build.
+		-->
+		<key>com.apple.developer.usernotifications.time-sensitive</key>
+		<true/>
+	</dict>
+</plist>

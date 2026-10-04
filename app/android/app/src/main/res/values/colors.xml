@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Native incoming-call palette. Mirrors frontend/src/theme/callTheme.ts (callColors) so the
+  native ring screen and the JS in-call session stay in lockstep. If the call look changes,
+  update both this file and callTheme.ts.
+-->
+<resources>
+    <color name="call_background">#0A0A0A</color>
+    <color name="call_surface">#111111</color>
+    <color name="call_surface_elevated">#1A1A1A</color>
+    <color name="call_surface_avatar">#1E1E2E</color>
+    <color name="call_border">#222222</color>
+
+    <color name="call_text_primary">#F3F3F3</color>
+    <color name="call_text_secondary">#C9C9C9</color>
+    <color name="call_text_muted">#8B8B92</color>
+    <color name="call_text_faint">#555555</color>
+
+    <color name="call_brand">#7F77DD</color>
+
+    <color name="call_accept">#1D9E75</color>
+    <color name="call_accept_surface">#0A2A1A</color>
+    <color name="call_decline">#E24B4A</color>
+    <color name="call_decline_surface">#2A0A0A</color>
+    <color name="call_presence">#1D9E75</color>
+
+    <color name="call_on_accent">#FFFFFF</color>
+</resources>

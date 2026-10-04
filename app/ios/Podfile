@@ -1,0 +1,48 @@
+# Resolve scripts with node to allow for hoisting
+def node_require(script)
+  require Pod::Executable.execute_command('node', ['-p',
+    "require.resolve(
+      '#{script}',
+      {paths: [process.argv[1]]},
+    )", __dir__]).strip
+end
+
+node_require('react-native/scripts/react_native_pods.rb')
+node_require('react-native-permissions/scripts/setup.rb')
+
+platform :ios, min_ios_version_supported
+prepare_react_native_project!
+
+# react-native-permissions compiles ONE handler pod per permission listed here; anything
+# omitted resolves to RESULTS.UNAVAILABLE at runtime (the handler header is absent, so
+# RNPermissions' `__has_include` guard compiles it out). The voice-call lanes gate on
+# PERMISSIONS.IOS.MICROPHONE, so 'Microphone' is required for meal/habit calls to start
+# on iOS at all. Re-run `pod install` after changing this list.
+setup_permissions([
+  'Microphone',
+])
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'habit_builder_app' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      # :ccache_enabled => true
+    )
+  end
+end

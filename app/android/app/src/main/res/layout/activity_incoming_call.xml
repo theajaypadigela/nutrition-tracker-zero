@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Native full-screen incoming-call screen. Mirrors the design of the (now retired) JS
+  IncomingCallScreen.tsx so the ring UI looks identical whether the app is open or killed.
+  Strings are set at runtime from the call payload (assistant name, subtitle) — no copy here.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/call_background"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="72dp"
+    android:paddingBottom="48dp"
+    android:fitsSystemWindows="true">
+
+    <!-- "incoming call" pill -->
+    <TextView
+        android:id="@+id/incoming_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_call_pill"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:text="incoming call"
+        android:textColor="@color/call_text_muted"
+        android:textSize="11sp" />
+
+    <!-- Avatar with presence dot -->
+    <FrameLayout
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:layout_marginTop="26dp">
+
+        <ImageView
+            android:id="@+id/avatar"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:background="@drawable/bg_avatar_circle"
+            android:padding="25dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_assistant_bot" />
+
+        <View
+            android:id="@+id/presence_dot"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="4dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_presence_dot" />
+    </FrameLayout>
+
+    <!-- Assistant name (set at runtime) -->
+    <TextView
+        android:id="@+id/agent_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="22dp"
+        android:textColor="@color/call_text_primary"
+        android:textSize="22sp"
+        android:textStyle="normal" />
+
+    <!-- Context subtitle (set at runtime: "Meals" / "Habits") -->
+    <TextView
+        android:id="@+id/subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/call_text_faint"
+        android:textSize="13sp" />
+
+    <!-- Verified pill -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/bg_call_pill"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
+
+        <View
+            android:id="@+id/verified_dot"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_presence_dot" />
+
+        <TextView
+            android:id="@+id/verified_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/call_text_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Spacer pushes the actions to the bottom -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Action row: Decline | Accept -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginEnd="28dp">
+
+            <ImageView
+                android:id="@+id/decline_button"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:background="@drawable/bg_decline_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:padding="22dp"
+                android:contentDescription="Decline"
+                android:src="@drawable/ic_call_decline" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Decline"
+                android:textColor="@color/call_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:layout_marginStart="28dp">
+
+            <ImageView
+                android:id="@+id/accept_button"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:background="@drawable/bg_accept_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:padding="22dp"
+                android:contentDescription="Accept"
+                android:src="@drawable/ic_call_answer" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Accept"
+                android:textColor="@color/call_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
