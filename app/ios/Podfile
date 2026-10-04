@@ -44,5 +44,15 @@ target 'habit_builder_app' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # Xcode 27 rejects deployment targets below 15.0; some pods' resource bundles still declare 12.4/13.4.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        if build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < min_ios_version_supported.to_f
+          build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
+        end
+        # fmt's consteval format strings break with Xcode 26.4+/27 clang; C++17 avoids consteval.
+        build_config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17' if target.name == 'fmt'
+      end
+    end
   end
 end

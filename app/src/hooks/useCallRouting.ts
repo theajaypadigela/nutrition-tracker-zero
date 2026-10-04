@@ -3,7 +3,12 @@ import { AppState } from 'react-native';
 import notifee, { EventType } from '@notifee/react-native';
 import { openVoiceCall } from '@/navigation/ref';
 import { reminderLog } from '@/services/calls/logger';
-import { consumePendingAnswer, consumePendingMissedAction, subscribeToNativeCallEvents } from '@/services/calls/native';
+import {
+  cancelAutoRetry,
+  consumePendingAnswer,
+  consumePendingMissedAction,
+  subscribeToNativeCallEvents,
+} from '@/services/calls/native';
 import { takePendingOpen } from '@/services/calls/pendingOpen';
 import { reconcile } from '@/services/calls/reconcile';
 import { handleNotifeeEvent } from '@/services/calls/ringEvents';
@@ -18,6 +23,7 @@ export function useCallRouting(signedIn: boolean | null) {
   useEffect(() => {
     if (signedIn === null) return;
     if (!signedIn) {
+      cancelAutoRetry();
       reconcile('signed-out', { signedIn: false }).catch(() => {});
       return;
     }
