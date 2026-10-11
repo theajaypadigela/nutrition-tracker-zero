@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, ScrollView, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { Flame, Repeat, Scale, Tags, Type } from 'lucide-react-native';
 import { api, ApiError, errorMessage } from '@/api/client';
 import type { Food } from '@/api/types';
-import { Banner, Button, Card, ChipGroup, Field, Loading, Row, Screen, ScrollBody, SectionTitle } from '@/components/ui';
+import AppBar from '@/components/common/AppBar';
+import { LoadingState, Notice } from '@/components/common/Feedback';
+import { ActionButton, BottomActionBar, BOTTOM_BAR_CLEARANCE, BOTTOM_BAR_SPACE, FormInput, QuickPill, SectionCard } from '@/components/common/Form';
+import { Text } from '@/components/ui/text';
+import { HStack } from '@/components/ui/hstack';
+import { VStack } from '@/components/ui/vstack';
+import { useKeyboardAwareScroll } from '@/hooks/useKeyboard';
 import type { RootStackParamList } from '@/navigation/types';
 import { useMeta } from '@/state/MetaContext';
+import { tokens } from '@/theme/tokens';
+import { perBase } from './FoodsScreen';
 
 const MAIN_COUNT = 7;
 
@@ -22,6 +31,7 @@ function toText(v: number | null | undefined): string {
 
 export default function FoodEditorScreen() {
   const navigation = useNavigation();
+  const { keyboardHeight, scrollProps } = useKeyboardAwareScroll(BOTTOM_BAR_CLEARANCE);
   const meta = useMeta();
   const { params } = useRoute<RouteProp<RootStackParamList, 'FoodEditor'>>();
   const editing = !!params.foodId;
@@ -159,75 +169,145 @@ export default function FoodEditorScreen() {
       },
     ]);
 
-  if (loading) return <Loading />;
+  const base = baseUnit ? perBase(baseUnit) : '…';
   const nutrientsShown = showMore ? meta.nutrients : meta.nutrients.slice(0, MAIN_COUNT);
 
   return (
-    <Screen edges={['bottom']}>
-      <ScrollBody>
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        {!editing ? (
-          <Text className="mb-3 mt-2 text-sm text-ink-soft">
-            Values you enter are shared with everyone and fix all past and future logs of this food. Use a label or a trusted source.
-          </Text>
-        ) : null}
-        <Card>
-          <Field label="Name" value={displayName} onChangeText={setDisplayName} error={fieldErrors.displayName} autoCapitalize="words" />
-          <Text className="mb-1.5 text-sm font-medium text-ink-soft">Values are per</Text>
-          <ChipGroup options={meta.baseUnits} value={baseUnit} onChange={(v) => setBaseUnit(v)} labels={Object.fromEntries(meta.baseUnits.map((u) => [u, u.startsWith('100') ? u : `1 ${u}`]))} />
-          {fieldErrors.baseUnit ? <Text className="text-sm text-danger">{fieldErrors.baseUnit}</Text> : null}
-        </Card>
+    <View className="flex-1">
+      <AppBar
+        title={editing ? 'Edit food' : 'Enter food values'}
+        subtitle="Shared with everyone"
+        variant="secondary"
+        showBackButton
+      />
+      {loading ? (
+        <LoadingState color={tokens.dashboard.green} />
+      ) : (
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          {...scrollProps}
+          contentContainerStyle={{ paddingBottom: BOTTOM_BAR_SPACE + keyboardHeight }}
+        >
+          <VStack className="p-6 gap-5">
+            {!editing ? (
+              <Notice tone="info">
+                Values you enter are shared with everyone and fix all past and future logs of this food. Use a label or a
+                trusted source.
+              </Notice>
+            ) : null}
 
-        <SectionTitle>Nutrients per {baseUnit ? (baseUnit.startsWith('100') ? baseUnit : `1 ${baseUnit}`) : '…'}</SectionTitle>
-        <Card>
-          {nutrientsShown.map((n) => (
-            <Field
-              key={n.key}
-              label={`${n.label} (${n.unit})${n.key === 'calories' ? ' *' : ''}`}
-              value={values[n.key] ?? ''}
-              onChangeText={(v) => setValues({ ...values, [n.key]: v })}
-              keyboardType="decimal-pad"
-              placeholder={n.key === 'calories' ? 'required' : 'unknown'}
-              error={fieldErrors[n.key]}
-            />
-          ))}
-          <Pressable onPress={() => setShowMore(!showMore)}>
-            <Text className="text-sm font-medium text-brand">{showMore ? 'Fewer nutrients' : `More nutrients (${meta.nutrients.length - MAIN_COUNT})`}</Text>
-          </Pressable>
-        </Card>
+            <SectionCard icon={Type} iconColor={tokens.icon.green} iconBg="bg-emerald-50" title="Food Name">
+              <FormInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="e.g. Idli"
+                autoCapitalize="words"
+                error={fieldErrors.displayName}
+              />
+            </SectionCard>
 
-        {editing && food ? (
-          <>
-            <SectionTitle>Also called</SectionTitle>
-            <Card>
-              {food.aliases.length === 0 ? <Text className="mb-2 text-sm text-ink-muted">No other names yet.</Text> : null}
-              {food.aliases.map((a) => (
-                <Row key={a} title={a} right={<Text className="text-sm text-danger" onPress={() => removeAlias(a)}>Remove</Text>} />
-              ))}
-              <View className="mt-2 flex-row items-start">
-                <Field className="mr-2 flex-1" value={alias} onChangeText={setAlias} placeholder="e.g. chawal" />
-                <Button small title="Add" onPress={addAlias} disabled={!alias.trim()} className="mt-1" />
+            <SectionCard
+              icon={Scale}
+              iconColor={tokens.icon.blue}
+              iconBg="bg-blue-50"
+              title="Values are per"
+              subtitle={baseUnit ? `Nutrients below are for ${base}` : 'Pick the serving the values describe'}
+            >
+              <View className="flex-row flex-wrap gap-2">
+                {meta.baseUnits.map(u => (
+                  <QuickPill key={u} label={perBase(u)} selected={baseUnit === u} onPress={() => setBaseUnit(u)} />
+                ))}
               </View>
-            </Card>
+              {fieldErrors.baseUnit ? <Text className="text-xs text-red-500">{fieldErrors.baseUnit}</Text> : null}
+            </SectionCard>
 
-            <SectionTitle>Unit conversions</SectionTitle>
-            <Card>
-              {food.units.length === 0 ? <Text className="text-sm text-ink-muted">None yet. Uncached shows the ones people need.</Text> : null}
-              {food.units.map((u, i) => (
-                <Row
-                  key={u.unit}
-                  title={`1 ${u.unit} = ${Math.round(u.servings * 1000) / 1000} × ${food.baseUnit}`}
-                  last={i === food.units.length - 1}
-                  onPress={() => navigation.navigate('UnitConversion', { foodId: food.id, foodName: food.displayName, baseUnit: food.baseUnit, unit: u.unit })}
-                  right={<Text className="text-sm text-danger" onPress={() => removeUnit(u.unit)}>Remove</Text>}
-                />
-              ))}
-            </Card>
-          </>
-        ) : null}
+            <SectionCard icon={Flame} iconColor={tokens.icon.amber} iconBg="bg-amber-50" title={`Nutrients per ${base}`}>
+              <View className="flex-row flex-wrap justify-between gap-y-3">
+                {nutrientsShown.map(n => (
+                  <FormInput
+                    key={n.key}
+                    className="w-[48%]"
+                    label={`${n.label} (${n.unit})${n.key === 'calories' ? ' *' : ''}`}
+                    value={values[n.key] ?? ''}
+                    onChangeText={v => setValues({ ...values, [n.key]: v })}
+                    keyboardType="decimal-pad"
+                    placeholder={n.key === 'calories' ? 'required' : 'unknown'}
+                    error={fieldErrors[n.key]}
+                  />
+                ))}
+              </View>
+              <TouchableOpacity onPress={() => setShowMore(!showMore)}>
+                <Text className="text-sm font-semibold text-emerald-600">
+                  {showMore ? 'Fewer nutrients' : `More nutrients (${meta.nutrients.length - MAIN_COUNT})`}
+                </Text>
+              </TouchableOpacity>
+            </SectionCard>
 
-        <Button title={editing ? 'Save food' : 'Add food'} onPress={save} loading={saving} className="mt-2" testID="save-food" />
-      </ScrollBody>
-    </Screen>
+            {editing && food ? (
+              <>
+                <SectionCard icon={Tags} iconColor={tokens.icon.violet} iconBg="bg-purple-50" title="Also called">
+                  {food.aliases.length === 0 ? <Text className="text-sm text-gray-500">No other names yet.</Text> : null}
+                  {food.aliases.map(a => (
+                    <HStack key={a} className="items-center justify-between py-1">
+                      <Text className="text-[15px] text-gray-900">{a}</Text>
+                      <RemovePill onPress={() => removeAlias(a)} />
+                    </HStack>
+                  ))}
+                  <HStack className="items-start gap-2">
+                    <FormInput className="flex-1" value={alias} onChangeText={setAlias} placeholder="e.g. chawal" autoCapitalize="none" />
+                    <TouchableOpacity
+                      onPress={addAlias}
+                      disabled={!alias.trim()}
+                      className={`rounded-xl px-4 py-3.5 ${alias.trim() ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    >
+                      <Text className={`font-semibold ${alias.trim() ? 'text-white' : 'text-gray-500'}`}>Add</Text>
+                    </TouchableOpacity>
+                  </HStack>
+                </SectionCard>
+
+                <SectionCard icon={Repeat} iconColor={tokens.icon.green} iconBg="bg-emerald-50" title="Unit conversions">
+                  {food.units.length === 0 ? (
+                    <Text className="text-sm text-gray-500">None yet. Uncached shows the ones people need.</Text>
+                  ) : null}
+                  {food.units.map(u => (
+                    <TouchableOpacity
+                      key={u.unit}
+                      onPress={() =>
+                        navigation.navigate('UnitConversion', {
+                          foodId: food.id,
+                          foodName: food.displayName,
+                          baseUnit: food.baseUnit,
+                          unit: u.unit,
+                        })
+                      }
+                      className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-200 flex-row items-center justify-between"
+                    >
+                      <Text className="text-[15px] text-gray-900 flex-1">
+                        1 {u.unit} = {Math.round(u.servings * 1000) / 1000} × {food.baseUnit}
+                      </Text>
+                      <RemovePill onPress={() => removeUnit(u.unit)} />
+                    </TouchableOpacity>
+                  ))}
+                </SectionCard>
+              </>
+            ) : null}
+          </VStack>
+        </ScrollView>
+      )}
+
+      <BottomActionBar error={error}>
+        <ActionButton title={editing ? 'Save food' : 'Add food'} onPress={save} loading={saving} disabled={loading} testID="save-food" />
+      </BottomActionBar>
+    </View>
+  );
+}
+
+function RemovePill({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity onPress={onPress} className="rounded-full bg-red-50 px-3 py-1.5 ml-2">
+      <Text className="text-xs font-semibold text-red-500">Remove</Text>
+    </TouchableOpacity>
   );
 }

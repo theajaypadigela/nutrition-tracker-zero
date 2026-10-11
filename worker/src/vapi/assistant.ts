@@ -1,5 +1,6 @@
 import { LOGGED_UNITS, MEALS } from '../domain/units';
 import { weekdayOf } from '../domain/time';
+import { planMeals } from './meals';
 import { buildFirstMessage, buildSystemPrompt, formatLogged, type LoggedItem } from './prompt';
 
 /**
@@ -19,6 +20,8 @@ export interface AssistantInput {
   userId: string;
   name: string;
   localDate: string;
+  /** 'HH:MM' in the user's timezone when the call starts; decides which meals to ask about. */
+  localTime: string;
   callRowId: number;
   /** https://<worker>/vapi/webhook/<token> */
   webhookUrl: string;
@@ -61,16 +64,19 @@ export function saveFoodsTool(webhookUrl: string) {
 
 /** Inline (transient) assistant for `vapi.start(assistant)` (PLAN.md §9.2). */
 export function buildAssistant(input: AssistantInput) {
+  const plan = planMeals(input.localTime, input.alreadyLogged.map((i) => i.meal));
   const systemPrompt = buildSystemPrompt({
     name: input.name,
     weekday: weekdayOf(input.localDate),
     localDate: input.localDate,
+    localTime: input.localTime,
     alreadyLogged: formatLogged(input.alreadyLogged),
     units: LOGGED_UNITS,
+    plan,
   });
   return {
     name: 'Daily food check-in',
-    firstMessage: buildFirstMessage(input.name, input.alreadyLogged.length),
+    firstMessage: buildFirstMessage(input.name, input.localTime, plan, input.alreadyLogged.length),
     firstMessageMode: 'assistant-speaks-first',
     model: {
       ...ASSISTANT_DEFAULTS.model,

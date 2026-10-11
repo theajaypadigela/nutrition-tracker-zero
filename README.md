@@ -173,7 +173,7 @@ reads and 100k row writes/day) are far above what this app uses.
 1. Create a free account at vapi.ai and copy the **public** key from Dashboard → API Keys.
    (The free $5 credit lasts roughly 2–3 weeks of daily ~3 min calls; after that Vapi asks them for a card.)
 2. Install the APK. Create a profile, set a call time, and allow notifications, exact alarms and full-screen calls.
-3. Settings → paste the Vapi key → **Send test call now**.
+3. Settings (tap your initials, top right) → paste the Vapi key → **Send test call now**.
 
 ---
 

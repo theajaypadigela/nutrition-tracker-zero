@@ -1,25 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Mic, PhoneOff } from 'lucide-react-native';
 import { api } from '@/api/client';
 import type { CallInfo, Item } from '@/api/types';
-import { Banner, Button, Card, Screen } from '@/components/ui';
+import { FocusAwareStatusBar } from '@/components/common/Feedback';
+import { EditFoodDrawer } from '@/components/food-log/EditFoodDrawer';
+import VoiceSessionScreen, { type CallStatus } from '@/components/voice/VoiceSessionScreen';
 import { useVapiCall, type VoiceStatus } from '@/hooks/useVapiCall';
 import type { RootStackParamList } from '@/navigation/types';
-import { colors } from '@/theme/colors';
-import { ItemRow } from './TodayScreen';
+import { tokens } from '@/theme/tokens';
+import { formatNumber, formatQuantity } from '@/utils/format';
 
-const LABEL: Record<VoiceStatus, string> = {
-  idle: 'Ready',
-  connecting: 'Connecting…',
-  active: 'Listening',
-  ended: 'Call ended',
-  error: 'Call problem',
+const SESSION_STATUS: Record<VoiceStatus, CallStatus> = {
+  idle: 'idle',
+  connecting: 'requesting',
+  active: 'active',
+  ended: 'completed',
+  error: 'error',
+};
+
+const STATUS_TEXT: Record<VoiceStatus, string> = {
+  idle: 'Tap Start Call to log your meals by voice',
+  connecting: 'Connecting to the assistant',
+  active: 'Tell the assistant what you ate today',
+  ended: 'Your food check-in is over',
+  error: 'Something went wrong with the call',
 };
 
 /** After the call, the webhook may land a moment later: poll the day briefly for this call's items. */
-function useCallOutcome(localDate: string | null, vapiCallId: string | null, ended: boolean) {
+function useCallOutcome(localDate: string | null, vapiCallId: string | null, ended: boolean, version: number) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [call, setCall] = useState<CallInfo | null>(null);
   useEffect(() => {
@@ -31,8 +40,8 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
       try {
         const day = await api.getDay(localDate);
         if (cancelled) return;
-        const mine = day.items.filter((i) => i.callId === vapiCallId && i.source === 'call');
-        const row = day.calls.find((c) => c.vapiCallId === vapiCallId) ?? null;
+        const mine = day.items.filter(i => i.callId === vapiCallId && i.source === 'call');
+        const row = day.calls.find(c => c.vapiCallId === vapiCallId) ?? null;
         setItems(mine);
         setCall(row);
         const settled = row && (row.status === 'tool_saved' || row.status === 'no_list' || row.status === 'failed') && row.endedReason;
@@ -45,7 +54,7 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
     return () => {
       cancelled = true;
     };
-  }, [ended, localDate, vapiCallId]);
+  }, [ended, localDate, vapiCallId, version]);
   return { items, call };
 }
 
@@ -54,8 +63,8 @@ export default function VoiceCallScreen() {
   const { params } = useRoute<RouteProp<RootStackParamList, 'VoiceCall'>>();
   const { status, error, transcript, isSpeaking, session, start, stop } = useVapiCall();
   const started = useRef(false);
-  const pulse = useRef(new Animated.Value(1)).current;
-  const scroll = useRef<ScrollView>(null);
+  const [editing, setEditing] = useState<Item | null>(null);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     if (params.autoStart && !started.current) {
@@ -64,84 +73,163 @@ export default function VoiceCallScreen() {
     }
   }, [params.autoStart, params.kind, start]);
 
-  useEffect(() => {
-    if (status !== 'active' && status !== 'connecting') return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.12, duration: 700, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [status, pulse]);
-
   const ended = status === 'ended' || (status === 'error' && !!session?.vapiCallId);
-  const outcome = useCallOutcome(session?.localDate ?? null, session?.vapiCallId ?? null, ended);
+  const outcome = useCallOutcome(session?.localDate ?? null, session?.vapiCallId ?? null, ended, version);
   const live = status === 'active' || status === 'connecting';
 
   return (
-    <Screen edges={['top', 'bottom']} className="bg-brand-deep">
-      <View className="items-center pb-6 pt-10">
-        <Animated.View style={{ transform: [{ scale: pulse }] }} className="h-28 w-28 items-center justify-center rounded-full bg-brand-mid">
-          <Mic color={colors.white} size={44} />
-        </Animated.View>
-        <Text className="mt-5 text-2xl font-bold text-white">Food check-in</Text>
-        <Text className="mt-1 text-base text-brand-soft2">{status === 'active' && isSpeaking ? 'Speaking…' : LABEL[status]}</Text>
-      </View>
-
-      <View className="flex-1 rounded-t-3xl bg-canvas px-4 pt-4">
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerClassName="pb-4">
-          {transcript.length === 0 && live ? (
-            <Text className="mt-6 text-center text-sm text-ink-muted">Tell the assistant what you ate today, one meal at a time.</Text>
-          ) : null}
-          {transcript.map((line, i) => (
-            <View key={i} className={`mb-2 max-w-[85%] rounded-2xl px-3.5 py-2.5 ${line.role === 'user' ? 'self-end bg-brand' : 'self-start bg-white'}`}>
-              <Text className={line.role === 'user' ? 'text-white' : 'text-ink'}>{line.text}</Text>
-            </View>
-          ))}
-          {ended ? <Outcome items={outcome.items} call={outcome.call} /> : null}
-        </ScrollView>
-
-        <View className="py-3">
-          {live ? (
-            <Button title="End call" variant="danger" icon={<PhoneOff color={colors.danger} size={18} />} onPress={stop} testID="end-call" />
-          ) : (
-            <View className="flex-row">
-              {status === 'error' || status === 'idle' ? (
-                <Button title="Try again" variant="secondary" className="mr-2 flex-1" onPress={() => start(params.kind)} />
-              ) : null}
-              <Button title="Done" className="flex-1" onPress={() => navigation.goBack()} />
-            </View>
-          )}
-        </View>
-      </View>
-    </Screen>
+    <>
+      <FocusAwareStatusBar barStyle="light-content" />
+      <VoiceSessionScreen
+        title="Food check-in"
+        statusText={status === 'error' && error ? error : STATUS_TEXT[status]}
+        status={SESSION_STATUS[status]}
+        isSpeaking={isSpeaking}
+        transcript={transcript}
+        onPrimaryPress={live ? stop : () => start(params.kind)}
+        disablePrimary={status === 'connecting'}
+        processingText="Checking what was saved…"
+        doneButtonText="Done"
+        onDonePress={() => navigation.goBack()}
+        onRetryPress={() => start(params.kind)}
+        outcome={ended ? <Outcome items={outcome.items} call={outcome.call} onOpenItem={setEditing} /> : null}
+      />
+      <EditFoodDrawer
+        item={editing}
+        isOpen={!!editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => setVersion(v => v + 1)}
+      />
+    </>
   );
 }
 
-function Outcome({ items, call }: { items: Item[] | null; call: CallInfo | null }) {
+function Outcome({ items, call, onOpenItem }: { items: Item[] | null; call: CallInfo | null; onOpenItem: (item: Item) => void }) {
   const navigation = useNavigation();
-  if (items === null) return <Text className="mt-4 text-center text-sm text-ink-muted">Checking what was saved…</Text>;
+  if (items === null) return <Text style={styles.muted}>Checking what was saved…</Text>;
   if (items.length > 0) {
     return (
-      <Card className="mt-3">
-        <Text className="mb-1 text-base font-semibold text-ink">Saved {items.length} item{items.length === 1 ? '' : 's'}</Text>
-        {items.map((i, idx) => (
-          <ItemRow key={i.id} item={i} last={idx === items.length - 1} onPress={() => navigation.navigate('EditItem', { item: i })} />
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>
+          Saved {items.length} item{items.length === 1 ? '' : 's'}
+        </Text>
+        {items.map((item, idx) => (
+          <TouchableOpacity
+            key={item.id}
+            onPress={() => onOpenItem(item)}
+            style={[styles.itemRow, idx > 0 && styles.itemDivider]}
+            activeOpacity={0.8}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.itemName}>{item.rawName}</Text>
+              <Text style={styles.itemMeta}>
+                {formatQuantity(item.quantity, item.unit)}
+                {item.foodName && item.foodName.toLowerCase() !== item.rawName.toLowerCase() ? ` · ${item.foodName}` : ''}
+              </Text>
+            </View>
+            {item.status === 'resolved' ? (
+              <Text style={styles.itemKcal}>{formatNumber(item.nutrients.calories ?? 0)} kcal</Text>
+            ) : (
+              <View style={styles.pendingBadge}>
+                <Text style={styles.pendingText}>{item.status === 'pending_food' ? 'Unknown food' : 'Unknown unit'}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         ))}
-      </Card>
+      </View>
     );
   }
   if (call?.status === 'no_list' || call?.status === 'failed') {
     return (
-      <Card className="mt-3">
-        <Text className="text-base font-semibold text-ink">No food list was saved</Text>
-        <Text className="mt-1 text-sm text-ink-soft">You can add what you ate yourself.</Text>
-        <Button small title="Add items" variant="secondary" className="mt-3 self-start" onPress={() => navigation.navigate('AddItems', { date: call.localDate, callId: call.id })} />
-      </Card>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>No food list was saved</Text>
+        <Text style={styles.cardBody}>You can add what you ate yourself.</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate('AddItems', { date: call.localDate, callId: call.id })}
+        >
+          <Text style={styles.addButtonText}>Add items</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
-  return <Text className="mt-4 text-center text-sm text-ink-muted">Waiting for the call summary…</Text>;
+  return <Text style={styles.muted}>Waiting for the call summary…</Text>;
 }
+
+const C = tokens.call;
+
+const styles = StyleSheet.create({
+  muted: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 13,
+    color: C.textMuted,
+  },
+  card: {
+    marginTop: 6,
+    backgroundColor: C.surfaceElevated,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.textPrimary,
+    marginBottom: 4,
+  },
+  cardBody: {
+    fontSize: 13,
+    color: C.textSecondary,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 10,
+  },
+  itemDivider: {
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  itemName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.textPrimary,
+  },
+  itemMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    color: C.textMuted,
+  },
+  itemKcal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.textSecondary,
+  },
+  pendingBadge: {
+    backgroundColor: C.warningSurface,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  pendingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.warning,
+  },
+  addButton: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: C.accept,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  addButtonText: {
+    color: C.onAccent,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});

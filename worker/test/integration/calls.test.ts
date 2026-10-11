@@ -56,7 +56,7 @@ describe('POST /calls/start', () => {
     await api('POST', `/days/${today()}/items`, { userId, body: { items: [{ name: 'poha', quantity: 1, unit: 'plate', meal: 'breakfast' }] } });
     const start = await startCall(userId);
     expect(start.assistant.model.messages[0].content).toContain('1 plate poha (breakfast)');
-    expect(start.assistant.firstMessage).toContain('I already have 1 item');
+    expect(start.assistant.firstMessage).toContain('I already have your breakfast.');
   });
 });
 

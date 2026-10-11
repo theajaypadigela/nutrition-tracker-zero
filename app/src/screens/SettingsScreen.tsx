@@ -1,16 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Switch, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { LogOut, User } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
 import type { CallInfo, Settings } from '@/api/types';
-import { Banner, Button, Card, Field, Header, Loading, Row, Screen, ScrollBody, SectionTitle } from '@/components/ui';
-import TimeField from '@/components/TimeField';
+import AppBar from '@/components/common/AppBar';
+import { LoadingState, Notice } from '@/components/common/Feedback';
 import TimezoneField from '@/components/TimezoneField';
+import { Button, ButtonText } from '@/components/ui/button';
+import { Divider } from '@/components/ui/divider';
+import { HStack } from '@/components/ui/hstack';
+import { Input, InputField } from '@/components/ui/input';
+import { Text } from '@/components/ui/text';
+import { VStack } from '@/components/ui/vstack';
+import { useKeyboardAwareScroll } from '@/hooks/useKeyboard';
 import { armTestCall } from '@/services/calls/reconcile';
 import { applySchedule } from '@/services/calls/schedule';
 import { loadLastRing, type LastRing } from '@/services/calls/scheduleStore';
 import { useProfile } from '@/state/ProfileContext';
-import { colors } from '@/theme/colors';
+import { tokens } from '@/theme/tokens';
+import { formatClock } from '@/utils/dates';
 
 const STATUS_TEXT: Record<CallInfo['status'], string> = {
   queued: 'Starting…',
@@ -26,6 +36,7 @@ function describeCall(c: CallInfo): string {
   return `${when} · ${c.kind} · ${STATUS_TEXT[c.status]}${detail}`;
 }
 
+/** The old Profile screen's layout, holding this app's settings (it opens from the AppBar avatar). */
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { profile, selectProfile } = useProfile();
@@ -34,6 +45,9 @@ export default function SettingsScreen() {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [lastRing, setLastRing] = useState<LastRing | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  // Clearance for the Save / Remove buttons under the key field.
+  const { keyboardHeight, scrollProps } = useKeyboardAwareScroll(100);
 
   const load = useCallback(async () => {
     try {
@@ -84,91 +98,250 @@ export default function SettingsScreen() {
     }
   };
 
-  if (!settings) {
-    return (
-      <Screen>
-        <Header title="Settings" />
-        {error ? <View className="px-4"><Banner tone="error">{error}</Banner></View> : <Loading />}
-      </Screen>
-    );
-  }
+  const pickerDate = (() => {
+    const [h, m] = (settings?.callTime ?? '20:00').split(':').map(Number);
+    const d = new Date();
+    d.setHours(h ?? 20, m ?? 0, 0, 0);
+    return d;
+  })();
 
   return (
-    <Screen>
-      <Header title="Settings" subtitle={profile?.name} />
-      <ScrollBody>
-        {error ? <Banner tone="error">{error}</Banner> : null}
-
-        <SectionTitle>Vapi</SectionTitle>
-        <Card>
-          <Text className="mb-2 text-sm text-ink-soft">
-            {settings.vapi.configured ? 'Public key configured ✓' : 'Paste the PUBLIC key from your Vapi dashboard (API Keys). Calls use your own free Vapi credit.'}
-          </Text>
-          <Field value={key} onChangeText={setKey} placeholder={settings.vapi.configured ? '••••••••  (paste to replace)' : 'Vapi public key'} secureTextEntry autoCapitalize="none" testID="vapi-key" />
-          <View className="flex-row">
-            <Button
-              small
-              title="Save key"
-              className="mr-2"
-              loading={busy === 'key'}
-              disabled={!key.trim()}
-              onPress={async () => {
-                if (await patch('key', { vapiPublicKey: key.trim() })) setKey('');
-              }}
-            />
-            {settings.vapi.configured ? <Button small variant="danger" title="Remove" onPress={() => patch('key', { vapiPublicKey: null })} /> : null}
+    <View className="flex-1">
+      <AppBar title="Settings" variant="secondary" showBackButton />
+      {!settings ? (
+        error ? (
+          <View className="p-6">
+            <Notice tone="error">{error}</Notice>
           </View>
-        </Card>
+        ) : (
+          <LoadingState color={tokens.dashboard.green} />
+        )
+      ) : (
+        <ScrollView
+          {...scrollProps}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 + keyboardHeight }}
+        >
+          <VStack className="gap-6 p-6">
+            <VStack className="bg-white rounded-2xl p-10 border border-gray-200 items-center">
+              <View className="flex justify-center mb-4">
+                <View className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center">
+                  <User size={36} color={tokens.icon.green} />
+                </View>
+              </View>
+              <Text size="2xl" className="font-semibold text-gray-900 text-center">
+                {profile?.name}
+              </Text>
+              <Text size="md" className="text-gray-600 mt-1 text-center">
+                Your profile
+              </Text>
+            </VStack>
 
-        <SectionTitle>Daily call</SectionTitle>
-        <Card>
-          <View className="mb-3 flex-row items-center justify-between">
-            <Text className="text-base text-ink">Ring me every day</Text>
-            <Switch
-              value={settings.callEnabled}
-              onValueChange={(v) => {
-                patch('enabled', { callEnabled: v });
-              }}
-              trackColor={{ true: colors.brandMid, false: colors.line }}
-              thumbColor={colors.white}
-            />
-          </View>
-          <Text className="mb-1.5 text-sm font-medium text-ink-soft">Call time</Text>
-          <TimeField value={settings.callTime} onChange={(callTime) => patch('time', { callTime })} />
-          <Text className="mb-1.5 mt-3 text-sm font-medium text-ink-soft">Time zone</Text>
-          <TimezoneField value={settings.timezone} onChange={(timezone) => patch('tz', { timezone })} />
-          <Text className="mt-3 text-xs text-ink-muted">
-            If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10 minutes.
-          </Text>
-        </Card>
-        <Button title="Send test call now" variant="secondary" loading={busy === 'test'} onPress={testCall} testID="test-call" />
+            {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <SectionTitle>Last call</SectionTitle>
-        <Card>
-          <Text className="text-sm text-ink">{settings.lastCall ? describeCall(settings.lastCall) : 'No calls yet.'}</Text>
-          {lastRing ? (
-            <Text className="mt-1 text-xs text-ink-muted">
-              Last ring: {lastRing.result} ({lastRing.callKind}), {new Date(lastRing.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-            </Text>
-          ) : null}
-        </Card>
+            {/* Vapi key */}
+            <VStack className="bg-white rounded-2xl p-6 border border-gray-200 gap-4">
+              <HStack className="justify-between items-center">
+                <Text size="xl" className="font-semibold">
+                  Vapi
+                </Text>
+                {settings.vapi.configured ? (
+                  <View className="rounded-full bg-emerald-50 px-2.5 py-[3px]">
+                    <Text className="text-xs font-medium text-emerald-600">Configured ✓</Text>
+                  </View>
+                ) : null}
+              </HStack>
+              <Text className="text-sm text-gray-600">
+                {settings.vapi.configured
+                  ? 'Paste a new key to replace the saved one.'
+                  : 'Paste the PUBLIC key from your Vapi dashboard (API Keys). Calls use your own free Vapi credit.'}
+              </Text>
+              <VStack className="gap-2">
+                <Text>Public key</Text>
+                <Input size="xl" className="w-full px-4 h-14 rounded-xl border-2 bg-white">
+                  <InputField
+                    testID="vapi-key"
+                    value={key}
+                    onChangeText={setKey}
+                    placeholder={settings.vapi.configured ? '••••••••  (paste to replace)' : 'Vapi public key'}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </Input>
+              </VStack>
+              <HStack className="w-full gap-3">
+                {settings.vapi.configured ? (
+                  <Button
+                    className="flex-1"
+                    variant="outline"
+                    action="negative"
+                    onPress={() => patch('key', { vapiPublicKey: null })}
+                    isDisabled={busy === 'key'}
+                  >
+                    <ButtonText>Remove</ButtonText>
+                  </Button>
+                ) : null}
+                <Button
+                  className="flex-1"
+                  variant="solid"
+                  action="positive"
+                  isDisabled={!key.trim() || busy === 'key'}
+                  onPress={async () => {
+                    if (await patch('key', { vapiPublicKey: key.trim() })) setKey('');
+                  }}
+                >
+                  <ButtonText>{busy === 'key' ? 'Saving...' : 'Save key'}</ButtonText>
+                </Button>
+              </HStack>
+            </VStack>
 
-        <SectionTitle>More</SectionTitle>
-        <Card className="py-1">
-          <Row title="Reminder health" subtitle="Check what could stop the call from ringing" onPress={() => navigation.navigate('ReminderHealth')} />
-          <Row title="Daily goals" onPress={() => navigation.navigate('Goals')} />
-          <Row
-            title="Switch profile"
-            last
-            onPress={() =>
-              Alert.alert('Switch profile?', 'Your data stays on the server. This phone stops ringing for this profile.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Switch', onPress: () => selectProfile(null) },
-              ])
-            }
-          />
-        </Card>
-      </ScrollBody>
-    </Screen>
+            {/* Daily call — the old Meal Reminder card */}
+            <VStack className="bg-white rounded-2xl p-6 border border-gray-200 gap-4">
+              <Text size="xl" className="font-semibold">
+                Daily call
+              </Text>
+              <View style={styles.reminderRow}>
+                <View style={styles.cardLeft}>
+                  <Text style={styles.mealLabel}>Ring me every day</Text>
+                  <TouchableOpacity onPress={() => settings.callEnabled && setShowPicker(true)} disabled={!settings.callEnabled}>
+                    <Text style={[styles.timeText, !settings.callEnabled && styles.timeTextDisabled]}>
+                      {formatClock(settings.callTime)}
+                    </Text>
+                    {settings.callEnabled && <Text style={styles.tapToChange}>Tap to change time</Text>}
+                  </TouchableOpacity>
+                </View>
+                <Switch
+                  value={settings.callEnabled}
+                  onValueChange={v => {
+                    patch('enabled', { callEnabled: v });
+                  }}
+                  trackColor={{ false: tokens.settings.switchTrackOff, true: tokens.settings.switchTrackOn }}
+                  thumbColor={settings.callEnabled ? tokens.settings.green : tokens.settings.switchThumbOff}
+                />
+              </View>
+              {showPicker ? (
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, picked) => {
+                    setShowPicker(Platform.OS === 'ios');
+                    if (event.type === 'set' && picked) {
+                      patch('time', {
+                        callTime: `${String(picked.getHours()).padStart(2, '0')}:${String(picked.getMinutes()).padStart(2, '0')}`,
+                      });
+                    }
+                  }}
+                />
+              ) : null}
+              <Divider />
+              <VStack className="gap-2">
+                <Text>Time zone</Text>
+                <TimezoneField value={settings.timezone} onChange={timezone => patch('tz', { timezone })} />
+              </VStack>
+              <Text className="text-xs text-gray-500">
+                If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10
+                minutes.
+              </Text>
+            </VStack>
+
+            <TouchableOpacity
+              testID="test-call"
+              style={[styles.saveBtn, busy === 'test' && styles.saveBtnDisabled]}
+              onPress={testCall}
+              disabled={busy === 'test'}
+            >
+              <Text style={styles.saveBtnText}>{busy === 'test' ? 'Arming…' : 'Send test call now'}</Text>
+            </TouchableOpacity>
+
+            {/* Last call */}
+            <VStack className="bg-white rounded-2xl p-6 border border-gray-200 gap-2">
+              <Text size="xl" className="font-semibold">
+                Last call
+              </Text>
+              <Text className="text-sm text-gray-700">{settings.lastCall ? describeCall(settings.lastCall) : 'No calls yet.'}</Text>
+              {lastRing ? (
+                <Text className="text-xs text-gray-500">
+                  Last ring: {lastRing.result} ({lastRing.callKind}),{' '}
+                  {new Date(lastRing.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              ) : null}
+            </VStack>
+
+            <TouchableOpacity style={styles.menuRow} onPress={() => navigation.navigate('ReminderHealth')}>
+              <Text style={styles.rowIcon}>🩺</Text>
+              <Text style={styles.rowLabel}>Reminder health</Text>
+              <Text style={styles.rowChevron}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuRow} onPress={() => navigation.navigate('Goals')}>
+              <Text style={styles.rowIcon}>🎯</Text>
+              <Text style={styles.rowLabel}>Daily goals</Text>
+              <Text style={styles.rowChevron}>›</Text>
+            </TouchableOpacity>
+
+            <View>
+              <Button
+                variant="outline"
+                action="negative"
+                className="w-full mt-4 rounded-xl shadow-lg border border-red-200 bg-gray-50"
+                onPress={() =>
+                  Alert.alert('Switch profile?', 'Your data stays on the server. This phone stops ringing for this profile.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Switch', onPress: () => selectProfile(null) },
+                  ])
+                }
+              >
+                <LogOut size={20} color={tokens.icon.red} />
+                <ButtonText size="md" className="text-red-500">
+                  Switch profile
+                </ButtonText>
+              </Button>
+            </View>
+          </VStack>
+        </ScrollView>
+      )}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cardLeft: { flex: 1 },
+  mealLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: tokens.settings.ink,
+    marginBottom: 4,
+  },
+  timeText: { fontSize: 22, fontWeight: '700', color: tokens.settings.green },
+  timeTextDisabled: { color: tokens.settings.disabledInk },
+  tapToChange: { fontSize: 11, color: tokens.settings.inkMuted, marginTop: 2 },
+  saveBtn: {
+    backgroundColor: tokens.settings.green,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  saveBtnDisabled: { backgroundColor: tokens.settings.disabled },
+  saveBtnText: { color: tokens.settings.surface, fontSize: 17, fontWeight: '700' },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: tokens.settings.surface,
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: tokens.settings.line,
+  },
+  rowIcon: { fontSize: 22, marginRight: 12 },
+  rowLabel: { flex: 1, fontSize: 16, fontWeight: '600', color: tokens.settings.ink },
+  rowChevron: { fontSize: 22, color: tokens.settings.inkMuted },
+});

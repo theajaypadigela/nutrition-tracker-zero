@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssistant } from '../../src/vapi/assistant';
+import { planMeals } from '../../src/vapi/meals';
+import { buildFirstMessage, formatClock } from '../../src/vapi/prompt';
+import { localTimeIn } from '../../src/domain/time';
 import { endOfCallReportOf, isStartFailure, metadataOf, parseArguments, toolCallsOf } from '../../src/vapi/parse';
 import { LOGGED_UNITS } from '../../src/domain/units';
 
@@ -8,6 +11,7 @@ describe('buildAssistant', () => {
     userId: 'u1',
     name: 'Asha Rao',
     localDate: '2026-10-04',
+    localTime: '13:05',
     callRowId: 7,
     webhookUrl: 'https://w.example/vapi/webhook/tok',
     alreadyLogged: [{ raw_name: 'idli', quantity: 2, unit: 'piece', meal: 'breakfast' }],
@@ -23,17 +27,81 @@ describe('buildAssistant', () => {
     expect(tool.function.parameters.properties.items.items.properties.unit.enum).toEqual([...LOGGED_UNITS]);
     expect(a.model.messages[0]!.content).toContain(LOGGED_UNITS.join(', '));
   });
-  it('includes date, weekday and already-logged context', () => {
+  it('includes time, date, weekday and already-logged context', () => {
     const prompt = a.model.messages[0]!.content;
-    expect(prompt).toContain('Sunday, 2026-10-04');
+    expect(prompt).toContain('It is 1:05 pm on Sunday, 2026-10-04, their local time.');
     expect(prompt).toContain('2 piece idli (breakfast)');
-    expect(a.firstMessage).toBe('Hi Asha! Quick food check-in. I already have 1 item for today. What else did you eat or drink?');
+    expect(a.firstMessage).toBe(
+      "Good afternoon, Asha! Quick food check-in. I already have your breakfast. Let's go meal by meal. Have you had lunch yet?",
+    );
+  });
+  it('walks only the meals that make sense at this time, skipping logged ones', () => {
+    const prompt = a.model.messages[0]!.content;
+    expect(prompt).toContain("- lunch: first ask whether they've had lunch yet; if not, skip it.");
+    expect(prompt).toContain('- snacks and drinks between meals');
+    expect(prompt).not.toContain('- breakfast:');
+    expect(prompt).not.toContain('- dinner:');
+    expect(prompt).toContain("Don't ask about: breakfast (already logged); dinner (still ahead today).");
+    expect(prompt).toContain('wish them a nice dinner');
   });
   it('has endCall, no recording, metadata, 10 min cap', () => {
     expect(a.model.tools[1]).toEqual({ type: 'endCall' });
     expect(a.artifactPlan.recordingEnabled).toBe(false);
     expect(a.metadata).toEqual({ userId: 'u1', localDate: '2026-10-04', callRowId: 7 });
     expect(a.maxDurationSeconds).toBe(600);
+  });
+});
+
+describe('planMeals', () => {
+  const states = (time: string, logged: (string | null)[] = []) =>
+    Object.fromEntries(planMeals(time, logged).map((s) => [s.meal, s.state]));
+
+  it('asks only about breakfast in the morning', () => {
+    expect(states('08:00')).toEqual({ breakfast: 'check', lunch: 'later', snack: 'later', dinner: 'later' });
+    expect(states('10:00')).toEqual({ breakfast: 'ask', lunch: 'later', snack: 'later', dinner: 'later' });
+    expect(states('11:00')).toEqual({ breakfast: 'ask', lunch: 'later', snack: 'ask', dinner: 'later' });
+  });
+  it('checks a meal during its window and asks once it is past', () => {
+    expect(states('12:30')).toMatchObject({ lunch: 'check', dinner: 'later' });
+    expect(states('15:00')).toMatchObject({ lunch: 'ask', dinner: 'later' });
+    expect(states('20:00')).toEqual({ breakfast: 'ask', lunch: 'ask', snack: 'ask', dinner: 'check' });
+    expect(states('22:30')).toMatchObject({ dinner: 'ask' });
+  });
+  it('skips logged meals but still asks about snacks', () => {
+    expect(states('20:00', ['breakfast', 'snack', null])).toEqual({ breakfast: 'logged', lunch: 'ask', snack: 'ask', dinner: 'check' });
+    expect(states('10:00', ['dinner'])).toMatchObject({ dinner: 'logged' });
+  });
+});
+
+describe('buildFirstMessage', () => {
+  const first = (time: string, logged: (string | null)[] = []) =>
+    buildFirstMessage('Asha Rao', time, planMeals(time, logged), logged.length);
+
+  it('opens on the first meal worth asking about', () => {
+    expect(first('08:15')).toBe('Good morning, Asha! Quick food check-in. Have you had breakfast yet?');
+    expect(first('10:00')).toBe('Good morning, Asha! Quick food check-in. What did you have for breakfast?');
+    expect(first('20:00')).toBe("Good evening, Asha! Quick food check-in. Let's go meal by meal. What did you have for breakfast?");
+    expect(first('20:00', ['breakfast', 'lunch'])).toBe(
+      "Good evening, Asha! Quick food check-in. I already have your breakfast and lunch. Let's go meal by meal. Did you have any snacks or drinks between meals, like tea or coffee?",
+    );
+  });
+  it('falls back to "anything else" when nothing is due', () => {
+    expect(first('09:00', ['breakfast'])).toBe(
+      'Good morning, Asha! Quick food check-in. I already have your breakfast. Did you have anything else to eat or drink?',
+    );
+    expect(first('09:00', [null, null])).toBe(
+      'Good morning, Asha! Quick food check-in. I already have 2 items for today. Have you had breakfast yet?',
+    );
+  });
+});
+
+describe('local time', () => {
+  it('reads the wall clock in the user timezone', () => {
+    expect(localTimeIn('Asia/Kolkata', new Date('2026-10-04T04:45:00Z'))).toBe('10:15');
+    expect(localTimeIn('Asia/Kolkata', new Date('2026-10-04T18:40:00Z'))).toBe('00:10');
+    expect(formatClock('00:10')).toBe('12:10 am');
+    expect(formatClock('12:30')).toBe('12:30 pm');
+    expect(formatClock('20:05')).toBe('8:05 pm');
   });
 });
 

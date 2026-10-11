@@ -1,6 +1,6 @@
 import { badRequest, conflict, json, notFound, nowIso, readJson } from '../http';
 import { callJson, staleSweepStatement, type CallRow } from '../db/queries';
-import { localDateIn } from '../domain/time';
+import { localDateIn, localTimeIn } from '../domain/time';
 import type { Ctx, Router } from '../router';
 import { buildAssistant } from '../vapi/assistant';
 import type { LoggedItem } from '../vapi/prompt';
@@ -31,7 +31,9 @@ export function registerCalls(router: Router) {
     if (!u.vapi_public_key) throw conflict('vapi_not_configured', 'Add your Vapi public key in Settings first');
 
     const db = env.DB;
-    const localDate = localDateIn(u.timezone);
+    const at = new Date();
+    const localDate = localDateIn(u.timezone, at);
+    const localTime = localTimeIn(u.timezone, at);
     const now = nowIso();
     const [inserted, logged] = await db.batch([
       db
@@ -51,6 +53,7 @@ export function registerCalls(router: Router) {
       userId: u.id,
       name: u.name,
       localDate,
+      localTime,
       callRowId: callId,
       webhookUrl: `${publicBase(env, url)}/vapi/webhook/${u.webhook_token}`,
       alreadyLogged: (logged as D1Result<LoggedItem>).results,

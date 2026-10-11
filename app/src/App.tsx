@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
-import { StatusBar } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { ActivityIndicator, StatusBar, View } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
-import { Loading } from '@/components/ui';
+import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
 import { useCallRouting } from '@/hooks/useCallRouting';
 import RootNavigator from '@/navigation/RootNavigator';
 import { navigationRef } from '@/navigation/ref';
@@ -13,9 +13,7 @@ import { saveCachedSchedule } from '@/services/calls/scheduleStore';
 import { reminderLog } from '@/services/calls/logger';
 import { MetaProvider } from '@/state/MetaContext';
 import { ProfileProvider, useProfile } from '@/state/ProfileContext';
-import { colors } from '@/theme/colors';
-
-const theme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: colors.brand, background: '#f4f7f5' } };
+import { tokens } from '@/theme/tokens';
 
 function Shell() {
   const { ready, profile } = useProfile();
@@ -34,9 +32,16 @@ function Shell() {
       .catch((e) => reminderLog.warn('schedule.sync_failed', String(e)));
   }, [ready, profile]);
 
-  if (!ready) return <Loading />;
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.dashboard.surface }}>
+        <ActivityIndicator color={tokens.dashboard.green} />
+      </View>
+    );
+  }
+  // The default navigation theme, as in the old app: #f2f2f2 behind the white cards.
   return (
-    <NavigationContainer ref={navigationRef} theme={theme}>
+    <NavigationContainer ref={navigationRef}>
       <RootNavigator />
     </NavigationContainer>
   );
@@ -46,12 +51,14 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar barStyle="dark-content" />
-        <ProfileProvider>
-          <MetaProvider>
-            <Shell />
-          </MetaProvider>
-        </ProfileProvider>
+        <GluestackUIProvider>
+          <StatusBar barStyle="dark-content" />
+          <ProfileProvider>
+            <MetaProvider>
+              <Shell />
+            </MetaProvider>
+          </ProfileProvider>
+        </GluestackUIProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

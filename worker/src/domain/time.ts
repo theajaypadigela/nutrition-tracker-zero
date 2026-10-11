@@ -22,6 +22,18 @@ export function localDateIn(tz: string, at: Date = new Date()): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/** 'HH:MM' (24 h) for the given instant in the given IANA zone. */
+export function localTimeIn(tz: string, at: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('hour')}:${get('minute')}`;
+}
+
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function isValidDate(value: string): boolean {

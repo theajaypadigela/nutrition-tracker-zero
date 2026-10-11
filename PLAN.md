@@ -294,7 +294,7 @@ A successful call earlier in the day does **not** cancel the evening ring. Inste
 ```jsonc
 {
   "name": "Daily food check-in",
-  "firstMessage": "Hi Asha! Quick food check-in. What did you have for breakfast today?", // Worker adapts it to what's already logged
+  "firstMessage": "Good evening, Asha! Quick food check-in. Let's go meal by meal. What did you have for breakfast?", // Worker adapts it to the local time and what's already logged
   "firstMessageMode": "assistant-speaks-first",
   "model": {
     "provider": "<from old dashboard>", "model": "<from old dashboard>", "temperature": 0.3,
@@ -330,15 +330,27 @@ Item extraction happens **only** through this tool. `structuredDataPlan` is not 
 
 ### 9.3 System prompt (draft; merged with the old dashboard prompt once we have it)
 
-> You are a friendly food-logging assistant on a short daily voice call with {{name}}. Today is {{weekday}}, {{localDate}}.
+The call is **meal by meal and time-aware**. `/calls/start` reads the user's local clock (`localTimeIn(timezone)`), and `vapi/meals.ts` gives each meal a state:
+
+| Meal | Not asked (`later`) | "Have you had it yet?" (`check`) | "What did you have?" (`ask`) |
+|---|---|---|---|
+| breakfast | — | before 10:00 | from 10:00 |
+| lunch | before 12:00 | 12:00–14:30 | from 14:30 |
+| snacks & drinks (one catch-all question) | before 10:30 | — | from 10:30 |
+| dinner | before 18:30 | 18:30–22:00 | from 22:00 |
+
+A main meal that already has items today is `logged` and skipped. Snacks are always asked once due, since another may have happened since. So at 10 am the call is only about breakfast and ends with "enjoy your lunch". At 8 pm it walks breakfast → lunch → snacks → "have you had dinner yet?". The first message opens on the first due meal with a time-of-day greeting, e.g. "Good afternoon, Asha! Quick food check-in. I already have your breakfast. Let's go meal by meal. Have you had lunch yet?".
+
+> You are a friendly food-logging assistant on a short daily voice call with {{name}}. It is {{time}} on {{weekday}}, {{localDate}}, their local time.
 > Already logged today (don't ask about these again): {{alreadyLogged | "nothing yet"}}.
-> 1. Ask what they ate and drank today, one meal at a time: breakfast, lunch, snacks, dinner. Skip meals already covered.
+> 1. Go meal by meal in this order, one meal per question, and finish each meal before moving on: {{due meals, each "ask what they had" or "first ask whether they've had it yet; if not, skip it"}}. Don't ask about: {{logged meals}} (already logged); {{later meals}} (still ahead today). If they bring one up anyway, record it.
 > 2. Every item needs a quantity and a unit. If either is missing, ask ("How many idlis?", "How many katoris of rice?").
 > 3. Use only these units: {{units}}. If they say something else, ask them to put it in one of these.
-> 4. Record each food as they named it, in singular form ("idli", not "idlis"). Never invent foods or amounts.
+> 4. Record each food as they named it, in singular form ("idli", not "idlis"), with the meal they had it at. Never invent foods or amounts.
 > 5. When they're done, read the whole list back with quantities and units, then ask "Is that right?" Apply corrections and read back what changed.
 > 6. Only after they confirm, call save_foods once with the complete list. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.
 > 7. If they want to stop early, save whatever they've confirmed, say goodbye, and end the call.
+> When you say goodbye, wish them a nice {{next meal still ahead}}.
 > Never mention calories, macros, nutrition or health advice, even if asked. Say the app shows that. Keep every turn short.
 
 ### 9.4 Webhook `POST /vapi/webhook/:token`
