@@ -1,17 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TabBar } from '@/components/layout/TabBar';
 import { useProfile } from '@/state/ProfileContext';
 import { useTheme } from '@/theme';
 import type { RootStackParamList, TabParamList } from './types';
-import ProfilesScreen from '@/screens/ProfilesScreen';
+import LoginScreen from '@/screens/LoginScreen';
+import RegisterScreen from '@/screens/RegisterScreen';
 import OnboardingScreen from '@/screens/OnboardingScreen';
 import TodayScreen from '@/screens/TodayScreen';
 import UncachedScreen from '@/screens/UncachedScreen';
 import FoodsScreen from '@/screens/FoodsScreen';
 import ReportScreen from '@/screens/ReportScreen';
 import WeeklySummaryScreen from '@/screens/WeeklySummaryScreen';
+import NutrientScreen from '@/screens/NutrientScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import VoiceCallScreen from '@/screens/VoiceCallScreen';
 import AddItemsScreen from '@/screens/AddItemsScreen';
@@ -20,6 +22,17 @@ import FoodPickerScreen from '@/screens/FoodPickerScreen';
 import UnitConversionScreen from '@/screens/UnitConversionScreen';
 import ReminderHealthScreen from '@/screens/ReminderHealthScreen';
 import GoalsScreen from '@/screens/GoalsScreen';
+import TargetsScreen from '@/screens/TargetsScreen';
+import HealthIntroScreen from '@/screens/profile/HealthIntroScreen';
+import SafetyCheckScreen from '@/screens/profile/SafetyCheckScreen';
+import AboutYouScreen from '@/screens/profile/AboutYouScreen';
+import ActivityScreen from '@/screens/profile/ActivityScreen';
+import GoalStepScreen from '@/screens/profile/GoalStepScreen';
+import PatternScreen from '@/screens/profile/PatternScreen';
+import ReviewScreen from '@/screens/profile/ReviewScreen';
+import { ReferenceOnlyScreen, Under19Screen } from '@/screens/profile/EndScreens';
+import { RecoveryCodeScreen, RecoveryEntryScreen } from '@/screens/profile/RecoveryScreens';
+import { navigationRef } from './ref';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -38,13 +51,30 @@ function MainTabs() {
 }
 
 export default function RootNavigator() {
-  const { profile, onboarding } = useProfile();
+  const { profile, onboarding, recoveryCode, healthIntroPending, consumeHealthIntro } = useProfile();
   const { colors } = useTheme();
+
+  // A new profile, once its call is set up, is offered personal targets once. Skipping is safe: a card stays on Today.
+  useEffect(() => {
+    if (!profile || onboarding || recoveryCode || !healthIntroPending) return undefined;
+    const timer = setTimeout(() => {
+      consumeHealthIntro();
+      if (navigationRef.isReady()) navigationRef.navigate('HealthIntro');
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [profile, onboarding, recoveryCode, healthIntroPending, consumeHealthIntro]);
+
   // Every screen draws its own header (see StackScreen / TabScreen), so the stack has none.
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
       {!profile ? (
-        <Stack.Screen name="Profiles" component={ProfilesScreen} />
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </>
+      ) : recoveryCode && onboarding ? (
+        // A new profile's secret is shown once, before anything else, as a recovery code.
+        <Stack.Screen name="RecoveryCode" component={RecoveryCodeScreen} />
       ) : onboarding ? (
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       ) : (
@@ -63,6 +93,19 @@ export default function RootNavigator() {
           <Stack.Screen name="Goals" component={GoalsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />
+          <Stack.Screen name="Nutrient" component={NutrientScreen} />
+          <Stack.Screen name="Targets" component={TargetsScreen} />
+          <Stack.Screen name="RecoveryCode" component={RecoveryCodeScreen} />
+          <Stack.Screen name="RecoveryEntry" component={RecoveryEntryScreen} />
+          <Stack.Screen name="HealthIntro" component={HealthIntroScreen} />
+          <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />
+          <Stack.Screen name="AboutYou" component={AboutYouScreen} />
+          <Stack.Screen name="Activity" component={ActivityScreen} />
+          <Stack.Screen name="HealthGoal" component={GoalStepScreen} />
+          <Stack.Screen name="Pattern" component={PatternScreen} />
+          <Stack.Screen name="HealthReview" component={ReviewScreen} />
+          <Stack.Screen name="ReferenceOnly" component={ReferenceOnlyScreen} />
+          <Stack.Screen name="Under19" component={Under19Screen} />
         </>
       )}
     </Stack.Navigator>

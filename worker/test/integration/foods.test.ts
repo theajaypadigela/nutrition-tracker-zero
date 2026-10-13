@@ -212,7 +212,7 @@ describe('days and items', () => {
     const res = await api('GET', '/days?from=2026-09-28&to=2026-10-04', { userId: u });
     expect(res.body.days).toHaveLength(7);
     expect(res.body.days.map((d: any) => d.totals.calories.value)).toEqual([105, 0, 210, 0, 0, 0, 0]);
-    expect(res.body.goals.calories).toBe(2500);
+    expect(res.body.goals.calories).toBe(2000);
     expect((await api('GET', '/days?from=2026-10-04&to=2026-09-28', { userId: u })).status).toBe(400);
     expect((await api('GET', '/days?from=2026-01-01&to=2026-06-01', { userId: u })).status).toBe(400);
   });

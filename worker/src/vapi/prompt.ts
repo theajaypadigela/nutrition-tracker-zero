@@ -78,6 +78,8 @@ export interface PromptInput {
   alreadyLogged: string;
   units: readonly string[];
   plan: MealStep[];
+  /** The Worker runs inside the app: save_foods is a client-side tool and Vapi sends no reply to it. */
+  onDevice?: boolean;
 }
 
 /** PLAN.md §9.3: meal by meal, only the meals that make sense at this time of day. */
@@ -87,11 +89,13 @@ export function buildSystemPrompt(p: PromptInput): string {
     `You are a friendly food-logging assistant on a short daily voice call with ${oneLine(p.name)}. It is ${formatClock(p.localTime)} on ${p.weekday}, ${p.localDate}, their local time.`,
     `Already logged today (don't ask about these again): ${p.alreadyLogged}.`,
     ...mealPlanLines(p.plan),
-    '2. Every item needs a quantity and a unit. If either is missing, ask ("How many idlis?", "How many katoris of rice?").',
+    '2. Every item needs a quantity and a unit. If either is missing, ask ("How many idlis?", "How many katoris of rice?"). If an amount sounds unusually large (more than 6 katoris, bowls or glasses, more than 20 pieces, or more than a kilogram), say it back and check it before you record it.',
     `3. Use only these units: ${p.units.join(', ')}. If they say something else, ask them to put it in one of these.`,
     '4. Record each food as they named it, in singular form ("idli", not "idlis"), with the meal they had it at (breakfast, lunch, snack or dinner). Never invent foods or amounts.',
     '5. When they\'re done, read the whole list back with quantities and units, then ask "Is that right?" Apply corrections and read back what changed.',
-    '6. Only after they confirm, call save_foods once with the complete list of new items from this call. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.',
+    p.onDevice
+      ? '6. Only after they confirm, call save_foods once with the complete list of new items from this call. It saves quietly on their phone and sends no reply, so do not wait for one and do not call it a second time because nothing came back. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.'
+      : '6. Only after they confirm, call save_foods once with the complete list of new items from this call. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.',
     '7. If they want to stop early, save whatever they\'ve confirmed, say goodbye, and end the call. If they had nothing new to add, just say goodbye and end the call.',
     ...(nextMeal ? [`When you say goodbye, wish them a nice ${nextMeal}.`] : []),
     'Never mention calories, macros, nutrition or health advice, even if asked. Say the app shows that. Keep every turn short.',

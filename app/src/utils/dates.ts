@@ -97,3 +97,14 @@ export function formatClock(hhmm: string | null): string {
   const hour = h! % 12 === 0 ? 12 : h! % 12;
   return `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
 }
+
+/**
+ * Whole years of age: the year difference, minus one when the birth month has not been reached yet; with no month,
+ * a birthday of 1 July is assumed. The same rule as the Worker's (WEEKLY_BREAKDOWN_PLAN.md 4.1), so the form and the
+ * server agree on who is 19.
+ */
+export function ageOn(today: string, birthYear: number, birthMonth: number | null): number {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  return year - birthYear - (month < (birthMonth ?? 7) ? 1 : 0);
+}

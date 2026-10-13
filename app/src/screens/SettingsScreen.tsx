@@ -1,18 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform, View } from 'react-native';
+import { Alert, Platform, Share, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { HeartPulse, LogOut, PhoneCall, Target } from 'lucide-react-native';
+import { FileDown, HeartPulse, KeyRound, LogOut, PhoneCall, Target, Trash2, UserRound } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
 import type { CallInfo, Settings } from '@/api/types';
-import { Avatar, Badge, Button, Card, Field, FormGroup, ListGroup, ListRow, LoadingState, Notice, Text, Toggle } from '@/components/kit';
+import { Avatar, Badge, Button, Card, Field, FormGroup, ListGroup, ListRow, LoadingState, Notice, Segmented, Text, Toggle } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import TimezoneField from '@/components/TimezoneField';
 import { armTestCall } from '@/services/calls/reconcile';
 import { applySchedule } from '@/services/calls/schedule';
 import { loadLastRing, type LastRing } from '@/services/calls/scheduleStore';
+import { strings, where } from '@/i18n/strings';
+import { useHealth } from '@/state/HealthContext';
 import { useProfile } from '@/state/ProfileContext';
-import { space, useTheme } from '@/theme';
+import { clearProfileSecret } from '@/services/secret';
+import { space, useTheme, useThemePreference, type ThemePreference } from '@/theme';
 import { formatClock } from '@/utils/dates';
 import { initialsOf } from '@/utils/format';
 
@@ -36,7 +39,9 @@ function describeCall(c: CallInfo): string {
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { isDark } = useTheme();
+  const { preference, setPreference } = useThemePreference();
   const { profile, selectProfile } = useProfile();
+  const health = useHealth();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [key, setKey] = useState('');
@@ -100,18 +105,104 @@ export default function SettingsScreen() {
     return d;
   })();
 
+  const h = strings.health.settings;
+
+  const setHidden = async (numbersHidden: boolean) => {
+    setBusy('hide');
+    try {
+      health.apply(await api.saveHealthProfile({ profile: { numbersHidden } }));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportHealth = async () => {
+    setBusy('export');
+    try {
+      const data = await api.exportHealthData();
+      await Share.share({ title: 'My health data', message: JSON.stringify(data, null, 2) });
+    } catch (e) {
+      Alert.alert('Could not export', errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmDeleteHealth = () =>
+    Alert.alert(h.deleteHealthTitle, h.deleteHealthBody, [
+      { text: h.cancel, style: 'cancel' },
+      {
+        text: h.confirm,
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteHealthData();
+            await health.refresh();
+          } catch (e) {
+            Alert.alert('Could not delete', errorMessage(e));
+          }
+        },
+      },
+    ]);
+
+  const confirmDeleteProfile = () =>
+    Alert.alert(h.deleteProfileTitle, h.deleteProfileBody, [
+      { text: h.cancel, style: 'cancel' },
+      {
+        text: h.confirm,
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteProfile();
+            if (profile) await clearProfileSecret(profile.id);
+            await selectProfile(null);
+          } catch (e) {
+            Alert.alert('Could not delete', errorMessage(e));
+          }
+        },
+      },
+    ]);
+
   const confirmSwitch = () =>
-    Alert.alert('Switch profile?', 'Your data stays on the server. This phone stops ringing for this profile.', [
+    Alert.alert('Log out?', where.switchProfile, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Switch', onPress: () => selectProfile(null) },
+      { text: 'Log out', onPress: () => selectProfile(null) },
     ]);
 
   // Always reachable, including when the profile's settings can't load (say the profile no longer
-  // exists on the server): otherwise the person is stuck on an error with no way to pick another.
-  const switchProfileButton = <Button label="Switch profile" icon={LogOut} variant="ghost" fullWidth onPress={confirmSwitch} />;
+  // exists on the server): otherwise the person is stuck on an error with no way to log in as someone else.
+  const switchProfileButton = <Button label="Log out" icon={LogOut} variant="ghost" fullWidth onPress={confirmSwitch} />;
 
   return (
     <StackScreen title="Settings" gap={space.xl}>
+      {/* The profile and the look of the app are on this phone: they show whether or not the settings could be loaded. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingHorizontal: space.xs }}>
+        <Avatar initials={initialsOf(profile?.name)} size={56} />
+        <View style={{ flex: 1 }}>
+          <Text variant="title2" numberOfLines={1}>
+            {profile?.name}
+          </Text>
+          <Text variant="small" tone="muted">
+            Your profile
+          </Text>
+        </View>
+      </View>
+
+      <FormGroup title={strings.appearance.title} hint={strings.appearance.hint}>
+        <Segmented<ThemePreference>
+          options={[
+            { value: 'system', label: strings.appearance.system },
+            { value: 'light', label: strings.appearance.light },
+            { value: 'dark', label: strings.appearance.dark },
+          ]}
+          value={preference}
+          onChange={setPreference}
+        />
+      </FormGroup>
+
       {!settings ? (
         error ? (
           <>
@@ -123,18 +214,6 @@ export default function SettingsScreen() {
         )
       ) : (
         <>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingHorizontal: space.xs }}>
-            <Avatar initials={initialsOf(profile?.name)} size={56} />
-            <View style={{ flex: 1 }}>
-              <Text variant="title2" numberOfLines={1}>
-                {profile?.name}
-              </Text>
-              <Text variant="small" tone="muted">
-                Your profile
-              </Text>
-            </View>
-          </View>
-
           {error ? <Notice tone="danger">{error}</Notice> : null}
 
           <FormGroup
@@ -144,7 +223,11 @@ export default function SettingsScreen() {
             <ListGroup>
               <ListRow
                 title="Call me every day"
-                subtitle={settings.callEnabled ? 'The assistant rings at the time below' : 'Off'}
+                subtitle={
+                  settings.callEnabled
+                    ? 'The assistant rings at the time below. Turn this off any time for a break.'
+                    : 'Paused. Nothing will ring until you turn this back on.'
+                }
                 right={
                   <Toggle
                     value={settings.callEnabled}
@@ -252,10 +335,35 @@ export default function SettingsScreen() {
             </Card>
           </FormGroup>
 
+          <FormGroup title={h.section}>
+            <ListGroup>
+              <ListRow
+                testID="settings-health"
+                icon={UserRound}
+                title={health.profile ? h.profileSet : h.profileNone}
+                onPress={() => navigation.navigate('HealthIntro')}
+              />
+              {health.status === 'locked' || health.status === 'mismatch' ? (
+                <ListRow icon={KeyRound} title={h.unlock} onPress={() => navigation.navigate('RecoveryEntry')} />
+              ) : null}
+              <ListRow icon={Target} title={h.targets} subtitle={h.targetsHint} onPress={() => navigation.navigate('Targets')} />
+              {health.profile ? (
+                <ListRow
+                  title={h.hideNumbers}
+                  subtitle={h.hideNumbersHint}
+                  right={<Toggle value={health.numbersHidden} onValueChange={setHidden} disabled={busy === 'hide'} accessibilityLabel={h.hideNumbers} testID="hide-numbers" />}
+                />
+              ) : null}
+              {health.status === 'ready' ? <ListRow icon={FileDown} title={h.export} onPress={exportHealth} /> : null}
+              {health.status === 'ready' && health.profile ? <ListRow icon={Trash2} title={h.deleteHealth} destructive onPress={confirmDeleteHealth} /> : null}
+              {health.status !== 'locked' ? <ListRow icon={Trash2} title={h.deleteProfile} destructive onPress={confirmDeleteProfile} /> : null}
+            </ListGroup>
+          </FormGroup>
+
           <FormGroup title="More">
             <ListGroup>
               <ListRow icon={HeartPulse} title="Reminder health" subtitle="Check that the call can ring on time" onPress={() => navigation.navigate('ReminderHealth')} />
-              <ListRow icon={Target} title="Daily goals" subtitle="Targets every report compares against" onPress={() => navigation.navigate('Goals')} />
+              <ListRow icon={Target} title="Daily targets" subtitle="Numbers you set yourself" onPress={() => navigation.navigate('Goals')} />
             </ListGroup>
           </FormGroup>
 

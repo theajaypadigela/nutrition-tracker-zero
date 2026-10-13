@@ -8,6 +8,8 @@ import { Button, Chip, Field, Notice, Sheet, Text } from '@/components/kit';
 import { useMeta } from '@/state/MetaContext';
 import { size, space } from '@/theme';
 import { capitalize, formatNumber } from '@/utils/format';
+import { strings, where } from '@/i18n/strings';
+import { weightText } from './MealSection';
 
 interface FoodErrors {
   foodName: string;
@@ -27,6 +29,7 @@ export function EditItemSheet({
   onClose,
   onSaved,
   onDelete,
+  numbersHidden = false,
 }: {
   item: Item | null;
   isOpen: boolean;
@@ -34,6 +37,8 @@ export function EditItemSheet({
   /** Called after the item was saved on the server. */
   onSaved: () => void;
   onDelete?: (item: Item) => void;
+  /** Low-pressure mode: the amount and its weight, never its calories or nutrients. */
+  numbersHidden?: boolean;
 }) {
   const navigation = useNavigation();
   const meta = useMeta();
@@ -111,7 +116,7 @@ export function EditItemSheet({
 
   const unitOptions = item && !meta.units.includes(item.unit) ? [...meta.units, item.unit] : meta.units;
   const counted =
-    item?.status === 'resolved'
+    item?.status === 'resolved' && !numbersHidden
       ? meta.nutrients
           .filter(n => item.nutrients[n.key] != null)
           .slice(0, 7)
@@ -153,7 +158,7 @@ export function EditItemSheet({
               ),
           }}
         >
-          {item.foodName} is stored per {item.baseUnit}; nobody has said how much one {item.unit} is yet.
+          {where.unitUnknown(item.foodName ?? '', item.baseUnit ?? '', item.unit)}
         </Notice>
       ) : null}
 
@@ -222,7 +227,17 @@ export function EditItemSheet({
         </View>
       </View>
 
-      {counted ? <Notice tone="info">Counts as {item?.foodName}: {counted}</Notice> : null}
+      {item?.amountCheck ? (
+        <Notice tone="warning" title={strings.item.check} testID="edit-amount-check">
+          {strings.item.checkHint[item.amountCheck]}
+        </Notice>
+      ) : null}
+      {counted ? (
+        <Notice tone="info">
+          Counts as {item?.foodName}
+          {item?.weight ? ` (${weightText(item.weight)})` : ''}: {counted}
+        </Notice>
+      ) : null}
       {saveError ? <Notice tone="danger">{saveError}</Notice> : null}
 
       {item && onDelete ? (

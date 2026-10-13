@@ -11,6 +11,8 @@ import { navigationRef } from '@/navigation/ref';
 import { applySchedule } from '@/services/calls/schedule';
 import { saveCachedSchedule } from '@/services/calls/scheduleStore';
 import { reminderLog } from '@/services/calls/logger';
+import { HealthProvider } from '@/state/HealthContext';
+import { HealthDraftProvider } from '@/state/HealthDraft';
 import { MetaProvider } from '@/state/MetaContext';
 import { ProfileProvider, useProfile } from '@/state/ProfileContext';
 import { AppStatusBar, ThemeProvider, useTheme } from '@/theme';
@@ -72,7 +74,11 @@ export default function App() {
           <AppStatusBar />
           <ProfileProvider>
             <MetaProvider>
-              <Shell />
+              <HealthProvider>
+                <HealthDraftProvider>
+                  <Shell />
+                </HealthDraftProvider>
+              </HealthProvider>
             </MetaProvider>
           </ProfileProvider>
         </ThemeProvider>

@@ -7,7 +7,22 @@ export interface Food {
   displayName: string;
   baseUnit: BaseUnit;
   nutrients: NutrientValues;
+  /** Where the numbers came from, and when someone last reviewed them (migration 0003). Both optional: older rows have neither. */
+  source?: FoodSource | null;
+  reviewedAt?: string | null;
+  /** Whether the numbers describe the food as eaten or raw and dry, before cooking (migration 0004); null when nobody said. */
+  form?: FoodForm | null;
 }
+
+export const FOOD_SOURCES = ['label', 'database', 'recipe', 'estimate'] as const;
+export type FoodSource = (typeof FOOD_SOURCES)[number];
+
+/**
+ * What a food's numbers describe: `as_eaten` (cooked, or eaten as it is) or `raw` (raw or dry, before cooking). A katori of cooked
+ * rice and a katori's worth of dry rice differ about threefold in energy, so the two must never be mixed up (plan 7.7).
+ */
+export const FOOD_FORMS = ['as_eaten', 'raw'] as const;
+export type FoodForm = (typeof FOOD_FORMS)[number];
 
 export interface AliasRow {
   alias: string;

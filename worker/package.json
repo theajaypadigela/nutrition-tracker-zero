@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply nutrition-zero --local",
     "db:migrate:remote": "wrangler d1 migrations apply nutrition-zero --remote",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "fixtures:app": "esbuild scripts/make-app-fixtures.ts --bundle --platform=node --format=esm --outfile=/tmp/ntz-make-fixtures.mjs --log-level=warning && node /tmp/ntz-make-fixtures.mjs",
+    "review:packet": "esbuild scripts/make-review-packet.ts --bundle --platform=node --format=esm --outfile=/tmp/ntz-review-packet.mjs --log-level=warning && node /tmp/ntz-review-packet.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.3.6",

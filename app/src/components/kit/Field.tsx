@@ -12,6 +12,8 @@ type PassThrough = Pick<
   | 'autoCorrect'
   | 'autoFocus'
   | 'secureTextEntry'
+  | 'autoComplete'
+  | 'textContentType'
   | 'returnKeyType'
   | 'onSubmitEditing'
   | 'editable'
@@ -89,6 +91,7 @@ export function Field({
   hint,
   suffix,
   icon,
+  trailing,
   required,
   testID,
   ...input
@@ -102,6 +105,8 @@ export function Field({
   /** A unit shown inside the field, after the value. */
   suffix?: string;
   icon?: LucideIcon;
+  /** Something pressable at the end of the field, such as the show/hide button of a password. */
+  trailing?: React.ReactNode;
   required?: boolean;
   testID?: string;
 } & PassThrough) {
@@ -150,6 +155,7 @@ export function Field({
             {suffix}
           </Text>
         ) : null}
+        {trailing}
       </View>
       {error ? (
         <Text variant="small" tone="danger">

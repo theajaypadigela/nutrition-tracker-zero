@@ -30,12 +30,41 @@ export function errorResponse(err: HttpError): Response {
 
 const DEFAULT_MAX_BODY = 256 * 1024;
 
+const tooLarge = () => new HttpError(413, 'payload_too_large', 'Request body too large');
+
+/**
+ * The body, read with a hard size cap that holds while it streams: a chunked upload with no Content-Length is stopped at the cap,
+ * never buffered whole first.
+ */
+async function readCapped(req: Request, maxBytes: number): Promise<Uint8Array> {
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 /** Reads a JSON body with a hard size cap. Throws HttpError 400/413. */
 export async function readJson<T = unknown>(req: Request, maxBytes = DEFAULT_MAX_BODY): Promise<T> {
   const declared = Number(req.headers.get('content-length') ?? '0');
-  if (declared > maxBytes) throw new HttpError(413, 'payload_too_large', 'Request body too large');
-  const buf = await req.arrayBuffer();
-  if (buf.byteLength > maxBytes) throw new HttpError(413, 'payload_too_large', 'Request body too large');
+  if (declared > maxBytes) throw tooLarge();
+  const buf = await readCapped(req, maxBytes);
   if (buf.byteLength === 0) throw badRequest('Expected a JSON body');
   try {
     return JSON.parse(new TextDecoder().decode(buf)) as T;
@@ -45,3 +74,11 @@ export async function readJson<T = unknown>(req: Request, maxBytes = DEFAULT_MAX
 }
 
 export const nowIso = () => new Date().toISOString();
+
+/**
+ * An error message as it may be logged: at most 200 characters, with any quoted value cut out. D1's own messages can quote a bound
+ * value ("not supported for value '…'"), and a log line must never carry what a person typed (plan 8.3.6).
+ */
+export function logSafe(message: string): string {
+  return message.replace(/'[^']*'|"[^"]*"/g, "'…'").slice(0, 200);
+}

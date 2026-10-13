@@ -1,41 +1,58 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { BarChart3, Target } from 'lucide-react-native';
-import { api } from '@/api/client';
-import { Card, FormGroup, ListGroup, ListRow, Notice, ProgressBar, SectionHeader, Text, type BadgeTone } from '@/components/kit';
+import type { NutrientReport } from '@/api/types';
+import { Button, Card, FormGroup, ListGroup, ListRow, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
+import { HealthCard } from '@/components/health/HealthCard';
 import { TabScreen } from '@/components/layout/TabScreen';
-import { WeekNutrientRow } from '@/components/report/WeekNutrientRow';
-import { deviceTimeZone } from '@/components/TimezoneField';
-import { useAsync } from '@/hooks/useAsync';
+import { CoverageCard } from '@/components/report/CoverageCard';
+import { EnergyCard } from '@/components/report/EnergyCard';
+import { FourWeekCard } from '@/components/report/FourWeekCard';
+import { InsightCard } from '@/components/report/InsightCard';
+import { IntakeCard } from '@/components/report/IntakeCard';
+import { NutrientLine } from '@/components/report/NutrientLine';
+import { QualityCard } from '@/components/report/QualityCard';
+import { ScoreBreakdown } from '@/components/report/ScoreBreakdown';
+import { ScoreCard } from '@/components/report/ScoreCard';
+import { CalibrationCard } from '@/components/weight/CalibrationCard';
+import { WeighInSheet, targetChangeLines, type WeighInResult } from '@/components/weight/WeighInSheet';
+import { WeightCard } from '@/components/weight/WeightCard';
+import { useHealthCard } from '@/hooks/useHealthCard';
+import { useToday } from '@/hooks/useToday';
+import { useWeeklyReport } from '@/hooks/useWeeklyReport';
+import { useWeightPrompt } from '@/hooks/useWeightPrompt';
+import { strings } from '@/i18n/strings';
+import { useHealth } from '@/state/HealthContext';
 import { useMeta } from '@/state/MetaContext';
 import { space } from '@/theme';
-import type { NutrientData } from '@/types/nutrition';
-import { addDays, localDateIn, weekStart } from '@/utils/dates';
-import { formatNumber } from '@/utils/format';
-import { weekRangeLabel } from '@/utils/nutrition';
-import { buildWeeklyNutrients, daysElapsed } from '@/utils/week';
+import { addDays, weekStart } from '@/utils/dates';
+import { insightAction, insightText } from '@/utils/insights';
+import { isJudged, nutrientInfo, weekEyebrow, weekRangeLabel } from '@/utils/report';
 
-/** A limit (sugar, sodium) is good under its goal; a target (fiber) is good once it is met. */
-function microStatus(n: NutrientData, kind: 'limit' | 'target'): { label: string; tone: BadgeTone } {
-  if (!(n.goal > 0)) return { label: 'No goal', tone: 'neutral' };
-  const pct = n.current / n.goal;
-  if (kind === 'limit') {
-    return pct <= 1 ? { label: 'Good', tone: 'success' } : pct <= 1.15 ? { label: 'Moderate', tone: 'warning' } : { label: 'High', tone: 'danger' };
-  }
-  return pct >= 1 ? { label: 'Good', tone: 'success' } : pct >= 0.8 ? { label: 'Moderate', tone: 'warning' } : { label: 'Low', tone: 'warning' };
-}
+const t = strings.report;
 
 /**
- * This week so far vs goals, computed from D1 (no AI, PLAN.md §12). Other weeks and every
- * nutrient live in the weekly view.
+ * This week from the Worker (plan 5.2), useful things first: how many days count and how sure the figures are, what was logged
+ * per day with earlier weeks alongside, up to three things that stood out, energy against the person's own target, the rows
+ * that matter for their goal, the vitamins over four weeks, and what is missing or uncertain. The Nutrient mix comes last, and
+ * only where the deployment shows one (`NUTRIENT_SCORE`) and the data supports it. Every verdict is decided by the Worker; this
+ * screen only lays it out. Four states replace content and never decorate it: not enough data, general reference, no personal
+ * targets, and numbers hidden.
  */
 export default function ReportScreen() {
   const navigation = useNavigation();
   const meta = useMeta();
-  const today = localDateIn(deviceTimeZone());
-  const start = weekStart(today);
-  const range = useAsync(() => api.getDays(start, addDays(start, 6)), [start]);
+  const healthCard = useHealthCard();
+  const health = useHealth();
+  const weightPrompt = useWeightPrompt();
+  const today = useToday();
+  const [weekIdx, setWeekIdx] = useState(0);
+  const [weighIn, setWeighIn] = useState(false);
+  const [weighNote, setWeighNote] = useState<string[] | null>(null);
+  const start = addDays(weekStart(today), weekIdx * 7);
+  const range = useWeeklyReport(start);
+  const [scoreOpen, setScoreOpen] = useState(false);
   useFocusEffect(
     useCallback(() => {
       range.reload();
@@ -43,146 +60,271 @@ export default function ReportScreen() {
     }, [start]),
   );
 
-  const elapsed = daysElapsed(start, today);
-  const byKey = useMemo(() => {
-    const list = range.data ? buildWeeklyNutrients(range.data, start, today, meta.nutrients) : [];
-    return Object.fromEntries(list.map(n => [n.id, n]));
-  }, [range.data, start, today, meta.nutrients]);
+  const report = range.report;
+  const hidden = report?.display.numbersHidden === true;
+  const byKey = useMemo(() => Object.fromEntries((report?.nutrients ?? []).map(n => [n.nutrient, n])), [report]);
+  const judged = !!report && isJudged(report.coverage.confidence);
 
-  const pick = (key: string): NutrientData => {
-    const n = byKey[key];
-    return {
-      current: Math.round(n?.amount ?? 0),
-      goal: Math.round(n?.goal ?? 0),
-      weeklyGoal: n?.dailyGoal ? Math.round(n.dailyGoal * 7) : undefined,
-    };
+  const insights = useMemo(
+    () =>
+      (report?.insights ?? []).flatMap(i => {
+        const text = insightText(i, { nutrients: meta.nutrients, numbersHidden: hidden });
+        return text ? [{ insight: i, text }] : [];
+      }),
+    [report, meta.nutrients, hidden],
+  );
+
+  const openNutrient = (key: string, window: 'week' | 'four_weeks' = 'week') =>
+    navigation.navigate('Nutrient', { key, start, window });
+  const openPending = () => navigation.navigate('Main', { screen: 'Uncached' });
+  const openDay = (date: string) => navigation.navigate('Main', { screen: 'Today', params: { date } });
+
+  // The rows that lead: the goal's rows, then the minerals furthest below their reference. Energy has its own card.
+  const lead = (report?.lead ?? [])
+    .filter(k => k !== 'calories')
+    .flatMap(k => (byKey[k] ? [byKey[k] as NutrientReport] : []));
+  const minimums = lead.filter(n => n.target?.kind === 'minimum');
+  const limits = lead.filter(n => n.target?.kind === 'limit');
+  const amounts = [...lead.filter(n => !n.target || (n.target.kind !== 'minimum' && n.target.kind !== 'limit'))];
+  const sugar = byKey.sugar as NutrientReport | undefined;
+  if (sugar && !amounts.includes(sugar) && !sugar.target) amounts.push(sugar);
+
+  const line = (n: NutrientReport, key = n.nutrient) => {
+    const info = nutrientInfo(meta.nutrients, n.nutrient);
+    return (
+      <NutrientLine
+        key={key}
+        report={n}
+        name={info.label}
+        unit={info.unit}
+        mode={report!.mode}
+        judged={judged}
+        note={n.nutrient === 'sugar' ? t.groups.sugarNote : undefined}
+        onPress={() => openNutrient(n.nutrient)}
+      />
+    );
   };
 
-  const calories = pick('calories');
-  const loggedDays = byKey.calories?.loggedDays ?? 0;
-  const pending = range.data?.days.reduce((s, d) => s + d.pendingCount, 0) ?? 0;
-  const calRatio = calories.goal > 0 ? calories.current / calories.goal : 0;
-  const weekComplete = !!calories.weeklyGoal && calories.weeklyGoal === calories.goal;
+  // A weigh-in is saved; if it moved the weight enough to make new targets, say what changed and why, never silently (plan 6.2).
+  const weighedIn = async (r: WeighInResult) => {
+    const before = health.targetSet;
+    setWeighIn(false);
+    setWeighNote(r.changed ? [strings.report.weighIn.changed, ...targetChangeLines(before, r.targetSet)] : [strings.report.weighIn.saved]);
+    await health.refresh();
+    range.reload();
+  };
 
-  const macros = [
-    { label: 'Protein', key: 'protein', kind: 'goal' as const },
-    { label: 'Carbs', key: 'carbs', kind: 'goal' as const },
-    { label: 'Fat', key: 'fat', kind: 'limit' as const },
-  ];
-  const others = [
-    { label: 'Fiber', key: 'fiber', kind: 'target' as const },
-    { label: 'Sugar', key: 'sugar', kind: 'limit' as const },
-    { label: 'Sodium', key: 'sodium', kind: 'limit' as const },
-  ];
+  const careTeamEnergy = !!report?.energy && byKey.calories?.target?.origin === 'care_team';
+  // The score is the last thing on the page, and not there at all where the deployment leaves it out (NUTRIENT_SCORE).
+  const showScore = !!report && report.mode === 'personalised' && !hidden && report.score.withheld !== 'off';
+  const anyTarget = lead.some(n => n.target);
+  const targetsRoute = report && !hidden && report.mode === 'personalised';
 
   return (
     <TabScreen
-      title="Report"
-      subtitle={`This week · ${weekRangeLabel(start)}`}
-      refreshing={range.loading && !!range.data}
+      title={t.title}
+      subtitle={`${weekEyebrow(weekIdx)} · ${weekRangeLabel(start)}`}
+      refreshing={range.refreshing}
       onRefresh={range.reload}
     >
       {range.error ? <Notice tone="danger">{range.error}</Notice> : null}
 
-      <Card padding="xl">
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text variant="small" tone="muted">
-            Calories this week
-          </Text>
-          <Text variant="small" tone="muted">
-            Day {elapsed} of 7
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.xs, marginTop: space.sm }}>
-          <Text variant="display" tabular>
-            {formatNumber(calories.current)}
-          </Text>
-          <Text variant="body" tone="muted">
-            kcal
-          </Text>
-        </View>
-        <View style={{ marginTop: space.lg, gap: space.sm }}>
-          <ProgressBar value={calRatio} tone={calRatio > 1.1 ? 'warning' : 'primary'} height={8} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text variant="caption" tone="muted" tabular>
-              {Math.round(calRatio * 100)}% of {formatNumber(calories.goal)} kcal{weekComplete ? '' : ' so far'}
-            </Text>
-            {!weekComplete ? (
-              <Text variant="caption" tone="muted" tabular>
-                Weekly {formatNumber(calories.weeklyGoal ?? 0)} kcal
-              </Text>
-            ) : null}
-          </View>
-        </View>
-        <Text variant="caption" tone="muted" style={{ marginTop: space.lg }}>
-          {loggedDays} of 7 days logged
-        </Text>
-      </Card>
+      {/* A locked report means the profile already has personal targets, kept by its secret: offer the code, not a fresh start. */}
+      {healthCard.visible && !range.locked ? (
+        <HealthCard onStart={() => navigation.navigate('HealthIntro')} onDismiss={healthCard.dismiss} />
+      ) : null}
 
-      {pending > 0 ? (
-        <Notice
-          tone="warning"
-          action={{ label: 'Open Pending', onPress: () => navigation.navigate('Main', { screen: 'Uncached' }) }}
-        >
-          {pending} item{pending === 1 ? ' is' : 's are'} still unknown and not counted.
+      {weightPrompt.visible ? (
+        <Card padding="xl" testID="weight-prompt">
+          <View style={{ gap: space.md }}>
+            <Text variant="title3">{strings.report.weighPrompt.title}</Text>
+            <Text variant="small" tone="secondary">
+              {strings.report.weighPrompt.body}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Button testID="weight-prompt-update" label={strings.report.weighPrompt.action} variant="soft" onPress={() => setWeighIn(true)} />
+              <Button testID="weight-prompt-dismiss" label={strings.report.weighPrompt.dismiss} variant="ghost" onPress={weightPrompt.dismiss} />
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
+      {weighNote ? (
+        <Notice tone="success" onDismiss={() => setWeighNote(null)} testID="weigh-note">
+          {weighNote.join(' ')}
         </Notice>
       ) : null}
 
-      <View style={{ gap: space.md }}>
-        <SectionHeader
-          title="Macros"
-          right={
-            <Text variant="small" tone="muted">
-              Week so far
-            </Text>
-          }
-        />
-        <ListGroup>
-          {macros.map(m => {
-            const n = pick(m.key);
-            return <WeekNutrientRow key={m.key} label={m.label} current={n.current} goal={n.goal} weeklyGoal={n.weeklyGoal} unit="g" kind={m.kind} />;
-          })}
-        </ListGroup>
-      </View>
+      <CoverageCard
+        weekIdx={weekIdx}
+        start={start}
+        onPrevWeek={() => setWeekIdx(w => w - 1)}
+        onNextWeek={() => setWeekIdx(w => Math.min(0, w + 1))}
+        report={report ?? undefined}
+        onOpenPending={openPending}
+      />
 
-      <View style={{ gap: space.md }}>
-        <SectionHeader title="Other nutrients" />
-        <ListGroup>
-          {others.map(m => {
-            const n = pick(m.key);
-            const unit = meta.nutrients.find(x => x.key === m.key)?.unit ?? 'g';
-            return (
-              <WeekNutrientRow
-                key={m.key}
-                label={m.label}
-                current={n.current}
-                goal={n.goal}
-                weeklyGoal={n.weeklyGoal}
-                unit={unit}
-                kind={m.kind === 'target' ? 'goal' : 'limit'}
-                badge={microStatus(n, m.kind)}
+      {range.locked ? (
+        <Notice
+          tone="info"
+          action={{ label: t.unlock, onPress: () => navigation.navigate('RecoveryEntry') }}
+          testID="report-locked"
+        >
+          {t.locked}
+        </Notice>
+      ) : null}
+
+      {range.loading ? <LoadingState label={t.loading} /> : null}
+
+      {report ? (
+        <>
+          {!hidden ? <IntakeCard report={report} nutrients={meta.nutrients} /> : null}
+
+          <View style={{ gap: space.md }}>
+            <SectionHeader title={t.stoodOut} />
+            {insights.length > 0 ? (
+              insights.map(({ insight, text }, i) => {
+                const action = insightAction(insight);
+                return (
+                  <InsightCard
+                    key={`${insight.id}-${insight.nutrient ?? i}`}
+                    text={text}
+                    priority={insight.priority}
+                    testID={`insight-${insight.id}`}
+                    action={
+                      action
+                        ? {
+                            label: action.label,
+                            onPress:
+                              action.target === 'pending'
+                                ? openPending
+                                : action.target === 'day'
+                                  ? () => openDay(action.date)
+                                  : () => openNutrient(action.key, action.window),
+                          }
+                        : null
+                    }
+                  />
+                );
+              })
+            ) : (
+              <Text variant="body" tone="secondary" testID="nothing-stood-out">
+                {hidden ? strings.lowPressure.nothing : t.nothingStoodOut}
+              </Text>
+            )}
+          </View>
+
+          {report.energy ? (
+            <EnergyCard energy={report.energy} days={report.coverage.days} careTeam={careTeamEnergy} />
+          ) : null}
+
+          {!hidden && lead.length > 0 ? (
+            <>
+              {report.mode === 'generic' ? (
+                <Text variant="caption" tone="muted" testID="reference-note">
+                  {strings.disclaimer.referenceLong}
+                </Text>
+              ) : null}
+              {report.mode === 'reference_only' ? (
+                <Text variant="caption" tone="muted" testID="reference-only-note">
+                  {t.referenceOnly} {anyTarget ? t.referenceOnlyCareTeam : ''}
+                </Text>
+              ) : null}
+
+              {minimums.length > 0 ? (
+                <View style={{ gap: space.md }}>
+                  <SectionHeader
+                    title={t.groups.getEnough}
+                    right={
+                      <Text variant="small" tone="muted">
+                        {t.groups.getEnoughHint}
+                      </Text>
+                    }
+                  />
+                  <ListGroup>{minimums.map(n => line(n))}</ListGroup>
+                </View>
+              ) : null}
+              {limits.length > 0 ? (
+                <View style={{ gap: space.md }}>
+                  <SectionHeader title={t.groups.keepInCheck} />
+                  <ListGroup>{limits.map(n => line(n))}</ListGroup>
+                </View>
+              ) : null}
+              {amounts.length > 0 ? (
+                <View style={{ gap: space.md }}>
+                  <SectionHeader title={t.groups.amountsOnly} />
+                  <ListGroup>{amounts.map(n => line(n))}</ListGroup>
+                </View>
+              ) : null}
+            </>
+          ) : null}
+
+          {!hidden && report.mode !== 'reference_only' && report.fourWeek.some(n => n.target) ? (
+            <FourWeekCard
+              items={report.fourWeek}
+              nutrients={meta.nutrients}
+              mode={report.mode}
+              onOpen={key => openNutrient(key, 'four_weeks')}
+            />
+          ) : null}
+
+          {report.quality && !hidden ? (
+            <QualityCard
+              quality={report.quality}
+              assessedDays={report.coverage.assessedDays}
+              nutrients={meta.nutrients}
+              onOpenGaps={openPending}
+              onOpenDay={openDay}
+            />
+          ) : null}
+
+          {report.mode === 'personalised' && !hidden ? (
+            <WeightCard weight={report.weight} isCurrent={report.week.isCurrent} onAdd={() => setWeighIn(true)} />
+          ) : null}
+          {report.calibration && !hidden ? <CalibrationCard calibration={report.calibration} /> : null}
+
+          {showScore ? <ScoreCard report={report} onOpen={() => setScoreOpen(true)} /> : null}
+        </>
+      ) : null}
+
+      {report || range.locked ? (
+        <FormGroup>
+          <ListGroup>
+            {report && !hidden ? (
+              <ListRow
+                icon={BarChart3}
+                title={t.all.link}
+                subtitle={t.all.linkHint}
+                onPress={() => navigation.navigate('WeeklySummary', { start })}
               />
-            );
-          })}
-        </ListGroup>
-      </View>
+            ) : null}
+            {targetsRoute || hidden ? (
+              <ListRow
+                icon={Target}
+                title={hidden ? strings.disclaimer.howWeCalculate : t.all.targetsLink}
+                subtitle={hidden ? undefined : t.all.targetsHint}
+                onPress={() => navigation.navigate('Targets')}
+              />
+            ) : (
+              <ListRow
+                icon={Target}
+                title={t.all.goalsLink}
+                subtitle={t.all.goalsHint}
+                onPress={() => navigation.navigate('Goals')}
+              />
+            )}
+          </ListGroup>
+        </FormGroup>
+      ) : null}
 
-      <FormGroup>
-        <ListGroup>
-          <ListRow
-            icon={BarChart3}
-            title="Weekly breakdown"
-            subtitle="Score, every nutrient, day-by-day chart"
-            onPress={() => navigation.navigate('WeeklySummary')}
-          />
-          <ListRow
-            icon={Target}
-            title="Daily goals"
-            subtitle="Set the targets every report compares against"
-            onPress={() => navigation.navigate('Goals')}
-          />
-        </ListGroup>
-      </FormGroup>
+      <Text variant="caption" tone="muted">
+        {strings.disclaimer.footer} {t.all.note}
+      </Text>
+
+      {report && showScore ? <ScoreBreakdown report={report} visible={scoreOpen} onClose={() => setScoreOpen(false)} /> : null}
+      {health.mode === 'personalised' && !health.numbersHidden ? (
+        <WeighInSheet visible={weighIn} onClose={() => setWeighIn(false)} onSaved={weighedIn} />
+      ) : null}
     </TabScreen>
   );
 }

@@ -6,11 +6,17 @@ import { createStyles, radius, space, useTheme } from '@/theme';
 import { fmtNum, weekDayLabels } from '@/utils/nutrition';
 
 interface Props {
-  /** Seven values, Monday first. */
-  values: number[];
+  /** Seven values, Monday first; null for a day that was not assessed (no bar, not a zero). */
+  values: (number | null)[];
   dailyGoal: number;
   unit: string;
   tone: ProgressTone;
+  /** What the dashed line is called: "Reference" for a general reference, "Target" for a person's own. */
+  referenceLabel?: string;
+  /** Draw without the card around it, for a chart inside a card. */
+  bare?: boolean;
+  /** Read by the screen reader in place of seven separate bars. */
+  summary?: string;
 }
 
 const CHART_HEIGHT = 168;
@@ -50,7 +56,7 @@ const useStyles = createStyles(({ colors }) => ({
 }));
 
 /** A week as seven bars against a dashed daily-goal line. Tap a bar for its value. */
-export function DayChart({ values, dailyGoal, unit, tone }: Props) {
+export function DayChart({ values, dailyGoal, unit, tone, referenceLabel = 'Reference', bare, summary }: Props) {
   const { colors } = useTheme();
   const styles = useStyles();
   const [width, setWidth] = useState(0);
@@ -58,11 +64,11 @@ export function DayChart({ values, dailyGoal, unit, tone }: Props) {
   const labels = weekDayLabels();
   const color = tone === 'warning' ? colors.warning : tone === 'danger' ? colors.danger : tone === 'muted' ? colors.textFaint : colors.primary;
   const usable = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
-  const max = Math.max(dailyGoal, ...values, 1) * 1.1;
+  const max = Math.max(dailyGoal, ...values.map(v => v ?? 0), 1) * 1.1;
   const goalY = PADDING_TOP + usable * (1 - (dailyGoal > 0 ? dailyGoal / max : 0));
 
-  return (
-    <Card padding="lg">
+  const content = (
+    <>
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.swatch, { backgroundColor: color }]} />
@@ -77,7 +83,7 @@ export function DayChart({ values, dailyGoal, unit, tone }: Props) {
             <View style={styles.dash} />
           </View>
           <Text variant="caption" tone="muted">
-            Daily goal
+            {`Daily ${referenceLabel.toLowerCase()}`}
           </Text>
         </View>
       </View>
@@ -91,22 +97,33 @@ export function DayChart({ values, dailyGoal, unit, tone }: Props) {
 
         <View style={styles.bars}>
           {values.map((v, i) => {
-            const barHeight = Math.max(0, Math.min(1, v / max)) * usable;
+            const barHeight = Math.max(0, Math.min(1, (v ?? 0) / max)) * usable;
             const isActive = active === i;
             return (
-              <TouchableWithoutFeedback key={i} onPress={() => setActive(isActive ? null : i)} accessibilityLabel={`${labels[i]}, ${fmtNum(v, unit)}`}>
+              <TouchableWithoutFeedback
+                key={i}
+                onPress={() => setActive(isActive ? null : i)}
+                accessibilityLabel={v === null ? `${labels[i]}, no figure` : `${labels[i]}, ${fmtNum(v, unit)}`}
+              >
                 <View style={styles.slot}>
                   <View style={styles.inner}>
                     {isActive ? (
                       <View style={styles.tooltip}>
                         <Text variant="caption" style={{ color: colors.bg }} tabular>
-                          {fmtNum(v, unit)}
+                          {v === null ? 'No figure' : fmtNum(v, unit)}
                         </Text>
                       </View>
                     ) : null}
-                    <View style={[styles.bar, v === 0 ? styles.empty : null, { height: v === 0 ? 3 : barHeight, backgroundColor: color }]} />
+                    <View style={[styles.bar, !v ? styles.empty : null, { height: !v ? 3 : barHeight, backgroundColor: color }]} />
                   </View>
-                  <Text variant="caption" tone={isActive ? 'text' : 'muted'} style={styles.label}>
+                  <Text
+                    variant="caption"
+                    tone={isActive ? 'text' : 'muted'}
+                    style={styles.label}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                  >
                     {labels[i]}
                   </Text>
                 </View>
@@ -118,11 +135,23 @@ export function DayChart({ values, dailyGoal, unit, tone }: Props) {
         {dailyGoal > 0 ? (
           <View style={[styles.goalTag, { top: Math.max(2, goalY - 9) }]} pointerEvents="none">
             <Text variant="caption" tone="muted">
-              Goal
+              {referenceLabel}
             </Text>
           </View>
         ) : null}
       </View>
+    </>
+  );
+  if (bare) {
+    return (
+      <View accessible={!!summary} accessibilityLabel={summary}>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <Card padding="lg" testID="day-chart">
+      {content}
     </Card>
   );
 }

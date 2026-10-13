@@ -9,7 +9,9 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { APP_TOKEN: 'test-app-token', PUBLIC_BASE_URL: '', TEST_MIGRATIONS: migrations },
+          // The Nutrient mix is off in a deployment (wrangler.jsonc) and on here, so the integration tests keep exercising its rules;
+          // test/integration/reports.test.ts checks the deployment default and what a report says with the score off.
+          bindings: { APP_TOKEN: 'test-app-token', PUBLIC_BASE_URL: '', NUTRIENT_SCORE: '1', TEST_MIGRATIONS: migrations },
         },
       }),
     ],

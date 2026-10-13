@@ -128,10 +128,11 @@ export function FormGroup({ title, hint, children }: { title?: string; hint?: st
 export function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: space.md }}>
-      <Text variant="title3" style={{ flexShrink: 1 }}>
+      {/* The title keeps its words whole: on a narrow screen or with a large font, the hint on the right wraps instead. */}
+      <Text variant="title3" style={{ flexShrink: 1, minWidth: '45%' }}>
         {title}
       </Text>
-      {right}
+      {right ? <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>{right}</View> : null}
     </View>
   );
 }

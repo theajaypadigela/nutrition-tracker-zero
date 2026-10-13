@@ -58,4 +58,10 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
+/** The Monday of the week containing `date` ('YYYY-MM-DD'): the app's weeks run Monday to Sunday. */
+export function weekStartOf(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  return addDays(date, -((d.getUTCDay() + 6) % 7));
+}
+
 export const CALL_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Plain HTTP only to this machine, for a local Worker reached over `adb reverse` (localhost) or from the emulator (10.0.2.2).
+  Everything else, the deployed Worker included, must be HTTPS: every request carries the app token and the profile's secret
+  (WEEKLY_BREAKDOWN_PLAN.md 8.3.6). Debug builds replace this file (src/debug) so Metro can be reached over the LAN.
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <domain includeSubdomains="false">10.0.2.2</domain>
+  </domain-config>
+</network-security-config>

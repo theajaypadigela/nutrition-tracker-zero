@@ -10,6 +10,9 @@ import { asObject, positiveInt, trimmedString } from '../validate';
 const START_KINDS = ['scheduled', 'retry', 'test', 'manual'] as const;
 type StartKind = (typeof START_KINDS)[number];
 
+/** The Worker runs inside the phone's app (app/src/embedded): there is no public URL for Vapi to call. */
+const onDevice = (env: Env): boolean => (env.ON_DEVICE as string) === '1';
+
 function publicBase(env: Env, url: URL): string {
   const configured = (env.PUBLIC_BASE_URL as string | undefined)?.trim();
   return (configured || url.origin).replace(/\/+$/, '');
@@ -55,7 +58,7 @@ export function registerCalls(router: Router) {
       localDate,
       localTime,
       callRowId: callId,
-      webhookUrl: `${publicBase(env, url)}/vapi/webhook/${u.webhook_token}`,
+      webhookUrl: onDevice(env) ? null : `${publicBase(env, url)}/vapi/webhook/${u.webhook_token}`,
       alreadyLogged: (logged as D1Result<LoggedItem>).results,
     });
     return json({ callId, localDate, publicKey: u.vapi_public_key, assistant }, 201);

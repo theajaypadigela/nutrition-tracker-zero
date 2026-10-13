@@ -9,6 +9,7 @@ import { TabScreen } from '@/components/layout/TabScreen';
 import { useAsync } from '@/hooks/useAsync';
 import { createStyles, space, useTheme } from '@/theme';
 import { formatNumber } from '@/utils/format';
+import { where } from '@/i18n/strings';
 
 export function matchesFood(f: Food, query: string): boolean {
   return !query || f.displayName.toLowerCase().includes(query) || f.aliases.some(a => a.includes(query));
@@ -68,7 +69,7 @@ export default function FoodsScreen() {
   return (
     <TabScreen
       title="Foods"
-      subtitle={foods.data ? `${foods.data.length} shared food${foods.data.length === 1 ? '' : 's'}` : 'Shared by everyone'}
+      subtitle={where.foodsSubtitle(foods.data ? foods.data.length : null)}
       refreshing={foods.loading && !!foods.data}
       onRefresh={foods.reload}
       fab={<Fab icon={Plus} label="New food" onPress={() => navigation.navigate('FoodEditor', {})} />}

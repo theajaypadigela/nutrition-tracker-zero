@@ -1,6 +1,6 @@
 import { normalizeName } from './normalize';
 import { normalizeUnit, isMeal, type Meal } from './units';
-import { resolveItem, type ItemStatus } from './nutrition';
+import { resolveItem, type ItemStatus } from './intake/items';
 import type { FoodIndex } from './match';
 
 export interface ItemInput {

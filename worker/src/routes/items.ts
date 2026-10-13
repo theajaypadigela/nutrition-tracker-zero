@@ -2,7 +2,7 @@ import { badRequest, json, noContent, notFound, readJson } from '../http';
 import { itemJson, loadIndex, type LogItemRow } from '../db/queries';
 import { MAX_NAME, parseMeal, parseQuantity } from '../domain/items';
 import { normalizeName } from '../domain/normalize';
-import { resolveItem } from '../domain/nutrition';
+import { resolveItem } from '../domain/intake/items';
 import { normalizeUnit } from '../domain/units';
 import type { Ctx, Router } from '../router';
 import { asObject, trimmedString } from '../validate';

@@ -6,6 +6,37 @@ import { localTimeIn } from '../../src/domain/time';
 import { endOfCallReportOf, isStartFailure, metadataOf, parseArguments, toolCallsOf } from '../../src/vapi/parse';
 import { LOGGED_UNITS } from '../../src/domain/units';
 
+describe('buildAssistant on the phone (webhookUrl null)', () => {
+  const a = buildAssistant({
+    userId: 'u1',
+    name: 'Asha Rao',
+    localDate: '2026-10-04',
+    localTime: '13:05',
+    callRowId: 7,
+    webhookUrl: null,
+    alreadyLogged: [],
+  });
+  const tool = a.model.tools[0] as ReturnType<typeof import('../../src/vapi/assistant').saveFoodsTool>;
+
+  it('makes save_foods a client-side tool the model does not wait on', () => {
+    expect(tool.function.name).toBe('save_foods');
+    expect(tool.async).toBe(true);
+    expect('server' in tool).toBe(false);
+  });
+  it('sends nothing to a server and listens for the messages the app needs', () => {
+    const loose = a as Record<string, unknown>;
+    expect('server' in loose).toBe(false);
+    expect('serverMessages' in loose).toBe(false);
+    expect(loose.clientMessages).toEqual(['tool-calls', 'transcript', 'conversation-update', 'speech-update', 'status-update']);
+    expect(JSON.stringify(a)).not.toMatch(/https?:\/\//);
+  });
+  it('tells the model no reply comes back, so it neither waits nor saves twice', () => {
+    const prompt = a.model.messages[0]!.content;
+    expect(prompt).toContain('sends no reply');
+    expect(prompt).toContain('do not call it a second time');
+  });
+});
+
 describe('buildAssistant', () => {
   const a = buildAssistant({
     userId: 'u1',
@@ -19,10 +50,22 @@ describe('buildAssistant', () => {
   const tool = a.model.tools[0] as ReturnType<typeof import('../../src/vapi/assistant').saveFoodsTool>;
 
   it('points the tool and the assistant at the webhook', () => {
-    expect(tool.server.url).toBe('https://w.example/vapi/webhook/tok');
-    expect(a.server.url).toBe('https://w.example/vapi/webhook/tok');
-    expect(a.serverMessages).toEqual(['tool-calls', 'end-of-call-report']);
+    expect(tool.server?.url).toBe('https://w.example/vapi/webhook/tok');
+    const loose = a as Record<string, any>;
+    expect(loose.server.url).toBe('https://w.example/vapi/webhook/tok');
+    expect(loose.serverMessages).toEqual(['tool-calls', 'end-of-call-report']);
+    expect('clientMessages' in loose).toBe(false);
+    expect(tool.async).toBe(false);
+    expect(a.model.messages[0]!.content).not.toContain('sends no reply');
   });
+
+  it('asks the assistant to check an unusually large amount before recording it (plan 7.7)', () => {
+    const prompt = a.model.messages[0]!.content;
+    expect(prompt).toContain('If an amount sounds unusually large');
+    expect(prompt).toContain('say it back and check it before you record it');
+    expect(prompt).not.toMatch(/calorie target|weight|BMI/i);
+  });
+
   it('uses the shared unit list in the tool enum and the prompt', () => {
     expect(tool.function.parameters.properties.items.items.properties.unit.enum).toEqual([...LOGGED_UNITS]);
     expect(a.model.messages[0]!.content).toContain(LOGGED_UNITS.join(', '));

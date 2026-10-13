@@ -4,6 +4,9 @@
 
 require('react-native-gesture-handler/jestSetup');
 
+/* local.ts is git-ignored and differs per machine: tests always see the hosted-Worker setting unless a test mocks its own. */
+jest.mock('@/config/local', () => ({ ON_DEVICE: false, API_BASE_URL: 'https://api.test', APP_TOKEN: 'test-token' }));
+
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
@@ -68,5 +71,20 @@ jest.mock('@notifee/react-native', () => {
       CHANNEL_GROUP_BLOCKED: 6,
       TRIGGER_NOTIFICATION_CREATED: 7,
     },
+  };
+});
+
+/* An in-memory Keychain, so the secret service can be exercised under jest. */
+jest.mock('react-native-keychain', () => {
+  const store = new Map();
+  return {
+    __esModule: true,
+    setGenericPassword: jest.fn(async (username, password, options = {}) => {
+      store.set(options.service ?? 'default', { username, password, service: options.service ?? 'default' });
+      return { service: options.service ?? 'default', storage: 'mock' };
+    }),
+    getGenericPassword: jest.fn(async (options = {}) => store.get(options.service ?? 'default') ?? false),
+    resetGenericPassword: jest.fn(async (options = {}) => store.delete(options.service ?? 'default')),
+    __store: store,
   };
 });

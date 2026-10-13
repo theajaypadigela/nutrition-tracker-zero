@@ -29,6 +29,7 @@ const useStyles = createStyles(({ colors }) => ({
     paddingBottom: space.md,
   },
   headerText: { flex: 1, paddingTop: space.xs, gap: 2 },
+  pinned: { paddingHorizontal: size.gutter, paddingBottom: space.md },
   footer: {
     paddingHorizontal: size.gutter,
     paddingTop: space.md,
@@ -42,6 +43,10 @@ const useStyles = createStyles(({ colors }) => ({
  * A bottom sheet: scrim, a rounded panel, a title and a close button, a scrolling body and an
  * optional fixed footer. It lifts above the keyboard itself, because edge-to-edge Android no
  * longer resizes the window for it.
+ *
+ * `header` is pinned under the title and does not scroll (a search box above a long list). `tall`
+ * makes the sheet as high as the screen allows, instead of as high as its content, so a list that
+ * grows and shrinks while typing does not make the sheet jump.
  */
 export function Sheet({
   visible,
@@ -49,7 +54,9 @@ export function Sheet({
   title,
   subtitle,
   children,
+  header,
   footer,
+  tall,
   testID,
 }: {
   visible: boolean;
@@ -57,7 +64,9 @@ export function Sheet({
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  header?: React.ReactNode;
   footer?: React.ReactNode;
+  tall?: boolean;
   testID?: string;
 }) {
   const styles = useStyles();
@@ -82,6 +91,7 @@ export function Sheet({
   }, [visible, progress]);
 
   const bottomInset = keyboardHeight > 0 ? 0 : insets.bottom;
+  const room = windowHeight - keyboardHeight - insets.top - space.xl;
   // Back with the keyboard up should only put the keyboard away. React Native's Modal listens for
   // the key-up of Back, which can arrive after the keyboard has already consumed the key-down.
   const handleBack = () => (keyboardHeight > 0 ? Keyboard.dismiss() : onClose());
@@ -99,7 +109,7 @@ export function Sheet({
             styles.sheet,
             {
               marginBottom: keyboardHeight,
-              maxHeight: windowHeight - keyboardHeight - insets.top - space.xl,
+              ...(tall ? { height: room } : { maxHeight: room }),
               transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [panelHeight, 0] }) }],
             },
           ]}
@@ -116,8 +126,9 @@ export function Sheet({
             </View>
             <IconButton icon={X} accessibilityLabel="Close" onPress={onClose} tone="secondary" />
           </View>
+          {header ? <View style={styles.pinned}>{header}</View> : null}
           <ScrollView
-            style={{ flexShrink: 1 }}
+            style={tall ? { flexShrink: 1, flexGrow: 1 } : { flexShrink: 1 }}
             contentContainerStyle={{
               paddingHorizontal: size.gutter,
               paddingBottom: footer ? space.lg : bottomInset + space.xl,

@@ -23,15 +23,22 @@ export interface AssistantInput {
   /** 'HH:MM' in the user's timezone when the call starts; decides which meals to ask about. */
   localTime: string;
   callRowId: number;
-  /** https://<worker>/vapi/webhook/<token> */
-  webhookUrl: string;
+  /**
+   * https://<worker>/vapi/webhook/<token>, or null when the Worker runs inside the app (ON_DEVICE): then nothing can reach a webhook,
+   * so the tool is client-side and the app hands what Vapi sends it to the same handler (app/src/embedded).
+   */
+  webhookUrl: string | null;
   alreadyLogged: LoggedItem[];
 }
 
-export function saveFoodsTool(webhookUrl: string) {
+/** What the app listens for on an on-device call: the tool call itself, plus the lines it shows and a fallback copy of the history. */
+export const ON_DEVICE_CLIENT_MESSAGES = ['tool-calls', 'transcript', 'conversation-update', 'speech-update', 'status-update'] as const;
+
+export function saveFoodsTool(webhookUrl: string | null) {
   return {
     type: 'function',
-    async: false,
+    // A client-side tool gets no result back (Vapi docs), so on-device the model must not wait for one.
+    async: webhookUrl === null,
     function: {
       name: SAVE_FOODS,
       description:
@@ -56,8 +63,8 @@ export function saveFoodsTool(webhookUrl: string) {
         },
       },
     },
-    // A tool without server.url becomes client-side on web calls, so it always carries its own.
-    server: { url: webhookUrl, timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS },
+    // A tool without server.url becomes client-side on web calls, so a hosted Worker always gives it its own.
+    ...(webhookUrl === null ? {} : { server: { url: webhookUrl, timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS } }),
     messages: [{ type: 'request-start', content: 'Saving that now.' }],
   };
 }
@@ -73,6 +80,7 @@ export function buildAssistant(input: AssistantInput) {
     alreadyLogged: formatLogged(input.alreadyLogged),
     units: LOGGED_UNITS,
     plan,
+    onDevice: input.webhookUrl === null,
   });
   return {
     name: 'Daily food check-in',
@@ -85,12 +93,16 @@ export function buildAssistant(input: AssistantInput) {
     },
     voice: { ...ASSISTANT_DEFAULTS.voice },
     transcriber: { ...ASSISTANT_DEFAULTS.transcriber },
-    server: {
-      url: input.webhookUrl,
-      timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS,
-      backoffPlan: { type: 'exponential', maxRetries: 3, baseDelaySeconds: 2 },
-    },
-    serverMessages: ['tool-calls', 'end-of-call-report'],
+    ...(input.webhookUrl === null
+      ? { clientMessages: [...ON_DEVICE_CLIENT_MESSAGES] }
+      : {
+          server: {
+            url: input.webhookUrl,
+            timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS,
+            backoffPlan: { type: 'exponential', maxRetries: 3, baseDelaySeconds: 2 },
+          },
+          serverMessages: ['tool-calls', 'end-of-call-report'],
+        }),
     maxDurationSeconds: 600,
     artifactPlan: { recordingEnabled: false },
     // Saves the user's credits. Shape to be confirmed by the Phase 3 spike.

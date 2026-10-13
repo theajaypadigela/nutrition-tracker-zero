@@ -1,36 +1,51 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ChevronLeft, ChevronRight, Plus, Utensils } from 'lucide-react-native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { CalendarCheck, ChevronLeft, ChevronRight, Plus, Utensils } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
-import type { Item, Meal, Settings } from '@/api/types';
-import { Button, EmptyState, Fab, IconButton, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
+import type { DayMark, Item, Meal, Settings } from '@/api/types';
+import { Button, EmptyState, Fab, IconButton, ListGroup, ListRow, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
+import { HealthCard } from '@/components/health/HealthCard';
 import { TabScreen } from '@/components/layout/TabScreen';
-import { deviceTimeZone } from '@/components/TimezoneField';
 import { AddMenuSheet } from '@/components/today/AddMenuSheet';
 import { CheckinCard } from '@/components/today/CheckinCard';
+import { DayStatusSheet } from '@/components/today/DayStatusSheet';
 import { EditItemSheet } from '@/components/today/EditItemSheet';
+import { IncompleteDayCard } from '@/components/today/IncompleteDayCard';
 import { MealSection } from '@/components/today/MealSection';
 import { NoListCallCard } from '@/components/today/NoListCallCard';
 import { SummaryCard } from '@/components/today/SummaryCard';
 import { useAsync } from '@/hooks/useAsync';
+import { useHealthCard } from '@/hooks/useHealthCard';
+import { useToday } from '@/hooks/useToday';
+import { strings, where } from '@/i18n/strings';
+import type { TabParamList } from '@/navigation/types';
+import { useHealth } from '@/state/HealthContext';
 import { applySchedule } from '@/services/calls/schedule';
 import { useMeta } from '@/state/MetaContext';
-import { addDays, dayHeading, localDateIn } from '@/utils/dates';
+import { addDays, dayHeading } from '@/utils/dates';
 
 const MEAL_ORDER: (Meal | null)[] = ['breakfast', 'lunch', 'snack', 'dinner', null];
-const DEFAULT_TARGET_CALORIES = 2500;
 
 export default function TodayScreen() {
   const navigation = useNavigation();
   const meta = useMeta();
+  const health = useHealth();
+  const healthCard = useHealthCard();
   const settings = useAsync(() => api.getSettings(), []);
-  const tz = settings.data?.timezone ?? deviceTimeZone();
-  const today = localDateIn(tz);
+  const today = useToday();
+  const route = useRoute<RouteProp<TabParamList, 'Today'>>();
   const [date, setDate] = useState<string | null>(null);
   const shown = date ?? today;
   const [editing, setEditing] = useState<Item | null>(null);
   const [addMenu, setAddMenu] = useState(false);
+  const [markSheet, setMarkSheet] = useState(false);
+
+  // An insight about a day ("Thursday looks incomplete") opens this screen on that day.
+  const requested = route.params?.date;
+  useEffect(() => {
+    if (requested && requested <= today) setDate(requested);
+  }, [requested, today]);
 
   const day = useAsync(() => api.getDay(shown), [shown]);
   useFocusEffect(
@@ -41,6 +56,7 @@ export default function TodayScreen() {
   );
 
   const units = useMemo(() => Object.fromEntries(meta.nutrients.map(n => [n.key, n.unit])), [meta]);
+  const kinds = useMemo(() => Object.fromEntries(meta.nutrients.map(n => [n.key, n.kind])), [meta]);
   const groups = useMemo(
     () =>
       MEAL_ORDER.map(meal => ({
@@ -52,7 +68,10 @@ export default function TodayScreen() {
   );
 
   const consumed = day.data?.totals.calories?.value ?? 0;
-  const target = day.data?.goals.calories ?? DEFAULT_TARGET_CALORIES;
+  // The calorie target comes from the day itself: the person's, a typed number, or the general reference. A profile
+  // without personal targets has none, and the card shows amounts only.
+  const target = day.data?.goals.calories ?? null;
+  const targetIsReference = health.mode === 'generic' && !day.data?.customGoals?.includes('calories');
   const noList = day.data?.calls.filter(c => c.status === 'no_list') ?? [];
   // The same failure on two calls is one message, not two banners.
   const failed = useMemo(() => {
@@ -65,6 +84,10 @@ export default function TodayScreen() {
     return [...byMessage.entries()];
   }, [day.data]);
   const itemCount = day.data?.items.length ?? 0;
+  // A past day the weekly figures leave out because very little is logged: ask whether that is everything (plan 7.2). A day that
+  // is incomplete because its foods are unknown has the Pending notice instead, and one the person marked has their mark.
+  const looksIncomplete =
+    !!day.data && shown < today && day.data.dayState?.state === 'partial' && day.data.dayState.reason === 'low';
 
   const saveCallSettings = async (patch: Partial<Pick<Settings, 'callTime' | 'callEnabled'>>) => {
     try {
@@ -93,6 +116,17 @@ export default function TodayScreen() {
         },
       },
     ]);
+
+  const mark = async (status: DayMark | null) => {
+    setMarkSheet(false);
+    try {
+      if (status) await api.setDayStatus(shown, status);
+      else await api.clearDayStatus(shown);
+      day.reload();
+    } catch (e) {
+      Alert.alert('Could not save', errorMessage(e));
+    }
+  };
 
   const heading = dayHeading(shown, today);
 
@@ -125,8 +159,49 @@ export default function TodayScreen() {
         {day.error ? <Notice tone="danger">{day.error}</Notice> : null}
         {!day.data && day.loading ? <LoadingState /> : null}
 
+        {day.data && health.numbersHidden ? (
+          <Notice tone="info" title={strings.lowPressure.todayTitle} testID="numbers-hidden-note">
+            {strings.lowPressure.todayBody}
+          </Notice>
+        ) : null}
+        {day.data && !health.numbersHidden ? (
+          <SummaryCard
+            consumed={consumed}
+            target={target}
+            targetIsReference={targetIsReference}
+            totals={day.data.totals}
+            goals={day.data.goals}
+            units={units}
+            kinds={kinds}
+          />
+        ) : null}
+
+        {looksIncomplete ? (
+          <IncompleteDayCard
+            kcal={consumed}
+            numbersHidden={health.numbersHidden}
+            onComplete={() => mark('complete')}
+            onLeaveOut={() => mark('skip')}
+          />
+        ) : null}
+
         {day.data ? (
-          <SummaryCard consumed={consumed} target={target} totals={day.data.totals} goals={day.data.goals} units={units} />
+          <ListGroup>
+            <ListRow
+              testID="mark-day"
+              icon={CalendarCheck}
+              title={strings.day.mark}
+              value={day.data.status ? strings.day.marked[day.data.status] : undefined}
+              onPress={() => setMarkSheet(true)}
+            />
+          </ListGroup>
+        ) : null}
+
+        {healthCard.visible ? (
+          <HealthCard
+            onStart={() => navigation.navigate('HealthIntro')}
+            onDismiss={healthCard.dismiss}
+          />
         ) : null}
 
         {/* items waiting on food values / a unit conversion */}
@@ -136,7 +211,7 @@ export default function TodayScreen() {
             title={`${day.data.pendingCount} item${day.data.pendingCount === 1 ? '' : 's'} waiting for values`}
             action={{ label: 'Open Pending', onPress: () => navigation.navigate('Main', { screen: 'Uncached' }) }}
           >
-            Once someone fills in the food values or unit conversion, they count here automatically.
+            {where.pendingNotice}
           </Notice>
         ) : null}
 
@@ -191,6 +266,7 @@ export default function TodayScreen() {
                   items={g.items}
                   onEdit={setEditing}
                   onAdd={meal => navigation.navigate('AddItems', { date: shown, meal })}
+                  numbersHidden={health.numbersHidden}
                 />
               ))
             )}
@@ -204,7 +280,9 @@ export default function TodayScreen() {
         onClose={() => setEditing(null)}
         onSaved={day.reload}
         onDelete={confirmDelete}
+        numbersHidden={health.numbersHidden}
       />
+      <DayStatusSheet visible={markSheet} onClose={() => setMarkSheet(false)} current={day.data?.status ?? null} onChange={mark} />
       <AddMenuSheet
         visible={addMenu}
         onClose={() => setAddMenu(false)}

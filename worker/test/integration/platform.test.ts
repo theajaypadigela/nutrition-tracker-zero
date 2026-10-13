@@ -51,9 +51,21 @@ describe('D1 capabilities', () => {
     expect(row?.c).toBe(0);
   });
 
-  it('applied the 0001 migration', async () => {
-    const { results } = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE 't_%' ORDER BY name`).all<{ name: string }>();
-    expect(results.map((r) => r.name)).toEqual(['calls', 'food_aliases', 'food_units', 'foods', 'log_items', 'user_goals', 'users']);
+  it('applied the migrations: the original tables, and the four health tables of 0002', async () => {
+    const { results } = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite_%' ESCAPE '\\' AND name NOT LIKE 'd1\\_%' ESCAPE '\\' AND name NOT LIKE 't\\_%' ESCAPE '\\' ORDER BY name`).all<{ name: string }>();
+    expect(results.map((r) => r.name)).toEqual([
+      'calls',
+      'day_status',
+      'food_aliases',
+      'food_units',
+      'foods',
+      'health_profiles',
+      'log_items',
+      'target_sets',
+      'user_goals',
+      'users',
+      'weight_entries',
+    ]);
   });
 });
 

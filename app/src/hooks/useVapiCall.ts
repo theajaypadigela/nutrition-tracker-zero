@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import Vapi from '@vapi-ai/react-native';
 import { PERMISSIONS, RESULTS, check, request } from 'react-native-permissions';
-import { api, errorMessage } from '@/api/client';
+import { api, deliverVapiMessage, errorMessage } from '@/api/client';
 import type { CallKind } from '@/api/types';
+import { ON_DEVICE } from '@/config/local';
+import { CallBridge, type EndedReason } from '@/embedded/vapi';
 import { reminderLog } from '@/services/calls/logger';
 import { describeVapiError, isMeetingEnded } from '@/services/calls/vapiErrors';
 import {
@@ -32,6 +34,9 @@ async function ensureMicrophone(): Promise<boolean> {
 /**
  * One Vapi web call: POST /calls/start (server records the call and builds the inline assistant),
  * vapi.start(assistant), then link the Vapi call id or report the failure (PLAN.md §9.1).
+ *
+ * When the Worker runs inside the app (ON_DEVICE) no server receives Vapi's messages, so a CallBridge feeds the call's
+ * save_foods and its end-of-call report to the same webhook handler (src/embedded/vapi.ts).
  */
 export function useVapiCall() {
   const [status, setStatus] = useState<VoiceStatus>('idle');
@@ -44,6 +49,8 @@ export function useVapiCall() {
   const statusRef = useRef<VoiceStatus>('idle');
   const callRowRef = useRef<number | null>(null);
   const failureReportedRef = useRef(false);
+  const bridgeRef = useRef<CallBridge | null>(null);
+  const endedByUserRef = useRef(false);
 
   const update = useCallback((s: VoiceStatus) => {
     statusRef.current = s;
@@ -53,6 +60,10 @@ export function useVapiCall() {
   const dispose = useCallback(() => {
     const v = vapiRef.current;
     vapiRef.current = null;
+    // Leaving the screen mid-call: the listeners go now, so the call's report would never be sent; send it first.
+    const bridge = bridgeRef.current;
+    bridgeRef.current = null;
+    if (bridge && !bridge.finished && bridge.vapiCallId) bridge.finish('customer-ended-call');
     if (!v) return;
     v.removeAllListeners();
     try {
@@ -90,6 +101,7 @@ export function useVapiCall() {
       setSession(null);
       callRowRef.current = null;
       failureReportedRef.current = false;
+      endedByUserRef.current = false;
       update('connecting');
 
       let micOk = false;
@@ -115,6 +127,9 @@ export function useVapiCall() {
 
       const vapi = new Vapi(started.publicKey);
       vapiRef.current = vapi;
+      const bridge = ON_DEVICE ? new CallBridge({ callRowId: started.callId, localDate: started.localDate, deliver: deliverVapiMessage }) : null;
+      bridgeRef.current = bridge;
+      const endReason = (): EndedReason => (endedByUserRef.current ? 'customer-ended-call' : 'assistant-ended-call');
       vapi.on('call-start', () => {
         update('active');
         try {
@@ -124,13 +139,18 @@ export function useVapiCall() {
         }
       });
       vapi.on('call-end', () => {
-        if (statusRef.current !== 'error') update('ended');
         setIsSpeaking(false);
         dismissIncomingCall();
+        // On the phone the report is written first, so the outcome card finds the call already settled.
+        const written = bridge ? bridge.finish(endReason()) : Promise.resolve();
+        written.then(() => {
+          if (statusRef.current !== 'error') update('ended');
+        });
       });
       vapi.on('speech-start', () => setIsSpeaking(true));
       vapi.on('speech-end', () => setIsSpeaking(false));
       vapi.on('message', (msg: any) => {
+        bridge?.onMessage(msg);
         if (msg?.type === 'transcript' && msg.transcriptType === 'final' && typeof msg.transcript === 'string') {
           const line: TranscriptLine = { role: msg.role === 'user' ? 'user' : 'assistant', text: msg.transcript };
           setTranscript((prev) => [...prev, line]);
@@ -141,15 +161,17 @@ export function useVapiCall() {
         // The server hanging up mid-call is a finished call, not a failure.
         if (statusRef.current === 'active' && isMeetingEnded(e)) {
           reminderLog.info('vapi.ended_by_server', reason);
-          update('ended');
           setIsSpeaking(false);
           dismissIncomingCall();
+          const written = bridge ? bridge.finish(endReason()) : Promise.resolve();
+          written.then(() => update('ended'));
           return;
         }
         reminderLog.warn('vapi.error', reason);
         if (statusRef.current === 'connecting') fail(reason);
         else if (statusRef.current === 'active') {
           setError(reason);
+          bridge?.finish('pipeline-error');
           update('error');
         }
       });
@@ -159,6 +181,7 @@ export function useVapiCall() {
         if (!call?.id) throw new Error('Vapi did not start the call. Check your Vapi key and credit.');
         // The day's call is handled: drop the pending automatic re-ring.
         cancelAutoRetry();
+        if (bridge) bridge.vapiCallId = call.id;
         setSession({ callId: started.callId, localDate: started.localDate, vapiCallId: call.id });
         api.callStarted(started.callId, call.id).catch((e) => reminderLog.warn('call.link_failed', errorMessage(e)));
       } catch (e) {
@@ -170,6 +193,7 @@ export function useVapiCall() {
   );
 
   const stop = useCallback(() => {
+    endedByUserRef.current = true;
     dismissIncomingCall();
     const v = vapiRef.current;
     if (!v) {

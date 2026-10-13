@@ -1,7 +1,11 @@
 import { badRequest, conflict, json, nowIso, readJson } from '../http';
 import { callJson, staleSweepStatement, type CallRow, type UserRow } from '../db/queries';
+import { goalRejection, goalWarnings } from '../domain/goals';
 import { NUTRIENTS, isNutrientKey, type NutrientKey } from '../domain/nutrients';
-import { CALL_TIME_RE, isValidTimeZone } from '../domain/time';
+import { checkOverride } from '../domain/targets/overrides';
+import { CALL_TIME_RE, isValidTimeZone, localDateIn } from '../domain/time';
+import { requireProfileSecret } from '../auth';
+import { goalStateFromResults, goalStatements, goalsView, type GoalRow } from '../health';
 import type { Ctx, Router } from '../router';
 import { asObject, isUniqueViolation, trimmedString } from '../validate';
 import { MAX_PROFILE_NAME } from './profiles';
@@ -33,34 +37,51 @@ async function readSettings(env: Env, userId: string) {
   );
 }
 
-export type Goals = Record<NutrientKey, number | null>;
-
-export async function loadGoals(db: D1Database, userId: string): Promise<Goals> {
-  return goalsFromRows((await goalsStatement(db, userId).all<{ nutrient: string; target: number }>()).results);
+/** The nutrients whose goal the person typed (the rest read the recommended or the generic reference). */
+export function customKeys(rows: { nutrient: string }[]): NutrientKey[] {
+  return rows.map((r) => r.nutrient).filter(isNutrientKey);
 }
 
-export function goalsStatement(db: D1Database, userId: string) {
-  return db.prepare('SELECT nutrient, target FROM user_goals WHERE user_id = ?').bind(userId);
+/** A typed number outside the usual bounds is kept and labelled, never silently changed (plan 6.4). */
+function outsideBounds(row: GoalRow, view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>): boolean {
+  if (!isNutrientKey(row.nutrient) || row.origin === 'care_team') return false;
+  const set = state.sets.length ? state.sets[state.sets.length - 1]! : null;
+  const check = checkOverride({ nutrient: row.nutrient, value: row.target, set: view.mode === 'personalised' ? set : null, sex: set?.inputs?.sexForCalc ?? null });
+  // The wall and ceiling for calories hold with or without a profile.
+  return !check.ok || goalRejection(row.nutrient, row.target) !== null;
 }
 
-export function goalsFromRows(rows: { nutrient: string; target: number }[]): Goals {
-  const goals = Object.fromEntries(NUTRIENTS.map((n) => [n.key, n.defaultGoal])) as Goals;
-  for (const r of rows) if (isNutrientKey(r.nutrient)) goals[r.nutrient] = r.target;
-  return goals;
-}
-
-function goalsJson(rows: { nutrient: string; target: number }[]) {
-  const custom = new Map(rows.map((r) => [r.nutrient, r.target]));
+function goalsJson(rows: GoalRow[], view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>) {
+  const typed = new Map(rows.map((r) => [r.nutrient, r]));
   return {
-    goals: NUTRIENTS.map((n) => ({
-      key: n.key,
-      label: n.label,
-      unit: n.unit,
-      defaultGoal: n.defaultGoal,
-      target: custom.get(n.key) ?? n.defaultGoal,
-      custom: custom.has(n.key),
-    })),
+    mode: view.mode,
+    hidden: view.hidden,
+    goals: NUTRIENTS.map((n) => {
+      const row = typed.get(n.key);
+      const rec = view.recommended[n.key];
+      return {
+        key: n.key,
+        label: n.label,
+        unit: n.unit,
+        kind: n.kind,
+        defaultGoal: n.defaultGoal,
+        target: view.goals[n.key],
+        custom: !!row,
+        origin: view.origins[n.key] ?? null,
+        recommended: rec?.value ?? null,
+        ...(rec ? { how: rec.how, basis: rec.basis, evidence: rec.evidence } : {}),
+        ...(row ? { setAt: row.updated_at ?? null, outsideBounds: outsideBounds(row, view, state) } : {}),
+      };
+    }),
+    warnings: goalWarnings(rows),
   };
+}
+
+async function readGoals(env: Env, userId: string, tz: string, unlocked: boolean) {
+  const results = await env.DB.batch(goalStatements(env.DB, userId, unlocked));
+  const state = goalStateFromResults(results, unlocked);
+  const today = localDateIn(tz);
+  return goalsJson(state.goals, goalsView({ state, today, unlocked }), state);
 }
 
 export function registerSettings(router: Router) {
@@ -114,43 +135,78 @@ export function registerSettings(router: Router) {
     return json(await readSettings(env, user!.id));
   });
 
-  router.add('GET', '/me/goals', 'user', async ({ env, user }: Ctx) => {
-    const { results } = await goalsStatement(env.DB, user!.id).all<{ nutrient: string; target: number }>();
-    return json(goalsJson(results));
-  });
+  router.add('GET', '/me/goals', 'user', async ({ env, user, unlocked }: Ctx) => json(await readGoals(env, user!.id, user!.timezone, unlocked)));
 
-  router.add('PUT', '/me/goals', 'user', async ({ req, env, user }: Ctx) => {
+  /**
+   * Typed numbers, kept as overrides of the recommended value. With the profile's secret the bounds are the
+   * plan's (6.4): energy between the sex-specific floor and 125% of the estimate, protein between the allowance
+   * and the highest typical figure, sodium no higher than the 2,300 mg reduction level, a micronutrient up to its
+   * food-sourced upper level. Without it, only the wall and ceiling for calories apply. `origin: 'care_team'`
+   * is for a reference-only profile typing the numbers its doctor gave it (6.7).
+   */
+  router.add('PUT', '/me/goals', 'user', async ({ req, env, user, unlocked }: Ctx) => {
+    // A profile with a secret changes its numbers only with it: the personal bounds need the target set, and a care-team number is
+    // health data. A profile that never claimed one (an older app) keeps typing its own numbers, as in Phase 0.
+    if (user!.secret_hash && !unlocked) await requireProfileSecret(req, user!.secret_hash);
     const body = asObject(await readJson(req));
     const goals = asObject(body.goals);
+    const origin = body.origin === undefined ? 'custom' : body.origin;
+    if (origin !== 'custom' && origin !== 'care_team') throw badRequest("origin must be 'custom' or 'care_team'");
+    const db = env.DB;
+    const today = localDateIn(user!.timezone);
+    const before = goalStateFromResults(await db.batch(goalStatements(db, user!.id, unlocked)), unlocked);
+    const view = goalsView({ state: before, today, unlocked });
+    if (origin === 'care_team' && view.mode !== 'reference_only') {
+      throw badRequest('Care-team numbers are for profiles without personal targets. Use your own targets instead.', { field: 'origin' });
+    }
+    const set = before.sets.length ? before.sets[before.sets.length - 1]! : null;
+
     const upserts: { nutrient: string; target: number }[] = [];
     const resets: string[] = [];
+    const notes: { nutrient: string; note: string }[] = [];
     for (const [key, value] of Object.entries(goals)) {
       if (!isNutrientKey(key)) throw badRequest(`Unknown nutrient: ${key}`);
       if (value === null) {
         resets.push(key);
         continue;
       }
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 100_000) {
-        throw badRequest(`${key} goal must be a positive number`);
+      if (typeof value !== 'number') throw badRequest(`${key} goal must be a positive number`);
+      // The Phase 0 wall and ceiling hold for everyone; care-team numbers get only a typo guard (6.7).
+      const rejection = origin === 'care_team' ? careTeamRejection(key, value) : goalRejection(key, value);
+      if (rejection) throw badRequest(rejection, { field: key });
+      if (origin === 'custom' && view.mode === 'personalised') {
+        const check = checkOverride({ nutrient: key, value, set, sex: set?.inputs?.sexForCalc ?? null });
+        if (!check.ok) throw badRequest(check.message!, { field: key });
+        if (check.note) notes.push({ nutrient: key, note: check.note });
       }
       upserts.push({ nutrient: key, target: value });
     }
-    const db = env.DB;
+    const now = nowIso();
+    // Without the secret only the person's own numbers are touched: a care-team number is neither replaced nor removed (?5 = 1).
+    const ownOnly = unlocked ? 0 : 1;
     await db.batch([
       db
-        .prepare(
-          `DELETE FROM user_goals WHERE user_id = ?1 AND nutrient IN (SELECT value FROM json_each(?2))`,
-        )
-        .bind(user!.id, JSON.stringify(resets)),
+        .prepare(`DELETE FROM user_goals WHERE user_id = ?1 AND nutrient IN (SELECT value FROM json_each(?2)) AND (?3 = 0 OR origin = 'custom')`)
+        .bind(user!.id, JSON.stringify(resets), ownOnly),
       db
         .prepare(
-          `INSERT INTO user_goals (user_id, nutrient, target)
-           SELECT ?1, g.value ->> '$.nutrient', g.value ->> '$.target' FROM json_each(?2) AS g WHERE true
-           ON CONFLICT (user_id, nutrient) DO UPDATE SET target = excluded.target`,
+          `INSERT INTO user_goals (user_id, nutrient, target, updated_at, origin)
+           SELECT ?1, g.value ->> '$.nutrient', g.value ->> '$.target', ?3, ?4 FROM json_each(?2) AS g WHERE true
+           ON CONFLICT (user_id, nutrient) DO UPDATE SET target = excluded.target, updated_at = excluded.updated_at, origin = excluded.origin
+           WHERE ?5 = 0 OR user_goals.origin = 'custom'`,
         )
-        .bind(user!.id, JSON.stringify(upserts)),
+        .bind(user!.id, JSON.stringify(upserts), now, origin, ownOnly),
     ]);
-    const { results } = await goalsStatement(db, user!.id).all<{ nutrient: string; target: number }>();
-    return json(goalsJson(results));
+    return json({ ...(await readGoals(env, user!.id, user!.timezone, unlocked)), notes });
   });
 }
+
+/** Numbers from a care team are used as typed, with only a typo guard: energy 500 to 6,000 kcal, the rest positive (plan 6.7). */
+function careTeamRejection(nutrient: NutrientKey, value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return `${nutrient} must be a positive number`;
+  if (nutrient === 'calories' && (value < 500 || value > 6000)) return 'Energy must be between 500 and 6,000 kcal';
+  const reference = NUTRIENTS.find((n) => n.key === nutrient)?.defaultGoal;
+  if (reference && value > reference * 10) return `That is more than ten times the usual reference for ${nutrient}. Check the number.`;
+  return null;
+}
+

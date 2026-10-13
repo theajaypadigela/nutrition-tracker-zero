@@ -2,7 +2,9 @@ import { buildIndex, type AliasRow, type Food, type FoodIndex, type UnitRow } fr
 import { NUTRIENTS, type NutrientValues } from '../domain/nutrients';
 import type { BaseUnit } from '../domain/units';
 import type { NewItem } from '../domain/items';
-import { itemNutrients } from '../domain/nutrition';
+import { itemNutrients, itemWeight } from '../domain/intake/items';
+import { checkAmount } from '../domain/quality/items';
+import { transcriptExpired } from '../maintenance';
 
 export interface UserRow {
   id: string;
@@ -12,6 +14,10 @@ export interface UserRow {
   call_enabled: number;
   vapi_public_key: string | null;
   webhook_token: string;
+  /** SHA-256 of the profile's secret; null until a legacy profile claims one. Never returned by any route. */
+  secret_hash: string | null;
+  /** PBKDF2 hash of the account password (see auth.ts); null for a profile made before accounts. Never returned by any route. */
+  password_hash: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -64,7 +70,16 @@ export function foodFromRow(row: FoodRow): Food {
     const v = row[n.column];
     nutrients[n.key] = typeof v === 'number' ? v : null;
   }
-  return { id: row.id, name: row.name, displayName: row.display_name, baseUnit: row.base_unit as BaseUnit, nutrients };
+  return {
+    id: row.id,
+    name: row.name,
+    displayName: row.display_name,
+    baseUnit: row.base_unit as BaseUnit,
+    nutrients,
+    source: (typeof row.source === 'string' ? row.source : null) as Food['source'],
+    reviewedAt: typeof row.reviewed_at === 'string' ? row.reviewed_at : null,
+    form: (typeof row.form === 'string' ? row.form : null) as Food['form'],
+  };
 }
 
 export async function getUser(db: D1Database, id: string): Promise<UserRow | null> {
@@ -134,6 +149,7 @@ export function staleSweepStatement(db: D1Database, userId: string, now = new Da
 
 export function itemJson(index: FoodIndex, row: LogItemRow) {
   const food = row.food_id ? index.byId.get(row.food_id) : undefined;
+  const nutrients = itemNutrients(index, row);
   return {
     id: row.id,
     localDate: row.local_date,
@@ -149,7 +165,11 @@ export function itemJson(index: FoodIndex, row: LogItemRow) {
     source: row.source,
     callId: row.call_id,
     createdAt: row.created_at,
-    nutrients: itemNutrients(index, row),
+    nutrients,
+    /** What the amount comes to in grams or millilitres, when the food says (plan 7.7). */
+    weight: itemWeight(index, row),
+    /** An amount worth a second look (a mishearing, a typo), or null: it still counts (plan 7.7). */
+    amountCheck: checkAmount({ quantity: row.quantity, unit: row.unit, kcal: row.status === 'resolved' ? nutrients.calories : null }),
   };
 }
 
@@ -165,6 +185,7 @@ export function callJson(row: CallRow, withTranscript = false) {
     error: row.error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    ...(withTranscript ? { transcript: row.transcript } : {}),
+    // A transcript past its retention period is never served, whether or not the daily purge has run (plan 8.3.3).
+    ...(withTranscript ? { transcript: transcriptExpired(row.created_at) ? null : row.transcript } : {}),
   };
 }

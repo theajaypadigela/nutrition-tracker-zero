@@ -1,6 +1,9 @@
 module.exports = {
   preset: 'react-native',
   setupFiles: ['<rootDir>/jest.setup.js'],
+  // The Worker's source (../worker/src) runs inside the app (src/embedded) and has no node_modules of its own: Babel's helpers
+  // are found in the app's.
+  modulePaths: ['<rootDir>/node_modules'],
   // Mirrors the '@/*' -> 'src/*' alias in tsconfig.json and babel.config.js.
   // babel-plugin-module-resolver already rewrites these at transform time; this is
   // here so a '@/...' path still resolves if the transform ever stops running.

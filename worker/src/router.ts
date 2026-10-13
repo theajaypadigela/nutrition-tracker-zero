@@ -1,14 +1,20 @@
 import type { UserRow } from './db/queries';
 
-export type Auth = 'none' | 'app' | 'user';
+/**
+ * `none`: open. `app`: the shared app token. `user`: plus an existing X-User-Id. `secret`: plus the profile's own
+ * secret, for health data (WEEKLY_BREAKDOWN_PLAN.md 8.3.2): the shared token alone is not enough.
+ */
+export type Auth = 'none' | 'app' | 'user' | 'secret';
 
 export interface Ctx {
   req: Request;
   env: Env;
   url: URL;
   params: Record<string, string>;
-  /** Set for `user` routes (X-User-Id resolved), optionally for `app` routes when the header is present. */
+  /** Set for `user` and `secret` routes (X-User-Id resolved), optionally for `app` routes when the header is present. */
   user: UserRow | null;
+  /** The request carried this profile's valid secret. Always true on `secret` routes; computed, never required, on `user` routes. */
+  unlocked: boolean;
 }
 
 export type Handler = (ctx: Ctx) => Promise<Response> | Response;

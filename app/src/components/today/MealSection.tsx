@@ -3,8 +3,16 @@ import { Pressable, View } from 'react-native';
 import { Cookie, Mic, Moon, Plus, Sun, Sunrise, Utensils, type LucideIcon } from 'lucide-react-native';
 import type { Item, Meal } from '@/api/types';
 import { Badge, Card, Divider, Icon, Text } from '@/components/kit';
+import { fill } from '@/i18n/fill';
+import { strings, where } from '@/i18n/strings';
 import { createStyles, space, useTheme } from '@/theme';
-import { capitalize, formatAmount, formatQuantity } from '@/utils/format';
+import { capitalize, formatAmount, formatNumber, formatQuantity } from '@/utils/format';
+
+/** "about 300 g": a weight rounded as a person would say it, to 5 g under 100 and to 10 g from there. */
+export function weightText(weight: { value: number; unit: string }): string {
+  const v = weight.value < 100 ? Math.round(weight.value / 5) * 5 : Math.round(weight.value / 10) * 10;
+  return fill(strings.item.weight, { value: Math.max(v, 1), unit: weight.unit });
+}
 
 const MEAL_ICON: Record<string, LucideIcon> = {
   breakfast: Sunrise,
@@ -31,19 +39,23 @@ const useStyles = createStyles(() => ({
 
 /**
  * One meal's foods in a card: the meal and its calories on top, each food as a row you tap
- * to edit, and an add row at the bottom that already knows the meal.
+ * to edit, and an add row at the bottom that already knows the meal. Each food says what its
+ * amount comes to in grams when the food says, and asks for a second look at an amount a call
+ * may have misheard. With numbers hidden (low-pressure mode) no calorie or macro figure shows.
  */
 export function MealSection({
   meal,
   items,
   onEdit,
   onAdd,
+  numbersHidden = false,
 }: {
   /** null groups items logged without a meal ("Other"). */
   meal: Meal | null;
   items: Item[];
   onEdit: (item: Item) => void;
   onAdd: (meal: Meal | null) => void;
+  numbersHidden?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
@@ -59,14 +71,16 @@ export function MealSection({
         <Text variant="bodyStrong" style={styles.headerTitle}>
           {name}
         </Text>
-        <View style={styles.total}>
-          <Text variant="bodyStrong" tabular>
-            {total}
-          </Text>
-          <Text variant="small" tone="muted">
-            kcal
-          </Text>
-        </View>
+        {numbersHidden ? null : (
+          <View style={styles.total}>
+            <Text variant="bodyStrong" tabular>
+              {formatNumber(total)}
+            </Text>
+            <Text variant="small" tone="muted">
+              kcal
+            </Text>
+          </View>
+        )}
       </View>
 
       {items.map(item => {
@@ -105,25 +119,34 @@ export function MealSection({
                 </View>
                 <Text variant="small" tone="secondary" numberOfLines={1}>
                   {formatQuantity(item.quantity, item.unit)}
+                  {item.weight ? ` · ${weightText(item.weight)}` : ''}
                   {alsoKnownAs}
                 </Text>
+                {item.amountCheck ? (
+                  <View style={{ gap: 4, marginTop: 2 }} testID={`amount-check-${item.id}`}>
+                    <Badge label={strings.item.check} tone="warning" />
+                    <Text variant="caption" tone="warning">
+                      {strings.item.checkHint[item.amountCheck]}
+                    </Text>
+                  </View>
+                ) : null}
                 {pending ? (
                   <View style={{ gap: 4, marginTop: 2 }}>
                     <Badge label={PENDING_LABEL[item.status]} tone="warning" />
                     <Text variant="caption" tone="warning">
-                      Not counted until someone adds its values
+                      {where.notCounted}
                     </Text>
                   </View>
-                ) : macros ? (
+                ) : macros && !numbersHidden ? (
                   <Text variant="caption" tone="muted">
                     {macros}
                   </Text>
                 ) : null}
               </View>
-              {!pending && calories != null ? (
+              {numbersHidden ? null : !pending && calories != null ? (
                 <View style={styles.total}>
                   <Text variant="bodyStrong" tabular>
-                    {Math.round(calories)}
+                    {formatNumber(Math.round(calories))}
                   </Text>
                   <Text variant="small" tone="muted">
                     kcal

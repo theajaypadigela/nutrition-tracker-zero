@@ -78,7 +78,8 @@ export function TabScreen({
               {title}
             </Text>
             {subtitle ? (
-              <Text variant="small" tone="muted" numberOfLines={1}>
+              // Two lines, not an ellipsis: "Tuesday, October 1…" would read as the wrong date on a narrow screen or a large font.
+              <Text variant="small" tone="muted" numberOfLines={2}>
                 {subtitle}
               </Text>
             ) : null}

@@ -8,14 +8,32 @@
     {
       "binding": "DB",
       "database_name": "nutrition-zero",
-      // Placeholder until `wrangler d1 create nutrition-zero --binding DB --update-config` (Phase 5).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Created 2026-10-13 in APAC (`wrangler d1 create nutrition-zero --location apac`). Not a secret.
+      "database_id": "be788c1b-d9a6-4587-b98a-43d67042467d",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
     // Optional: overrides the request origin when building Vapi webhook URLs (e.g. a cloudflared tunnel during the spike).
-    "PUBLIC_BASE_URL": ""
+    "PUBLIC_BASE_URL": "",
+    // "1" shows the Nutrient mix score on the weekly report. Off by default: the report leads with the days that count, the averages, what
+    // stood out and what is missing, and a score can look surer than incomplete food data allows. Turn it on once the foods people eat
+    // most have their mineral and sodium values (the Pending tab's "Foods with gaps" shows how far that is) (WEEKLY_BREAKDOWN_PLAN.md 5.5).
+    "NUTRIENT_SCORE": "",
+    // "1" adds saturated fat and added sugars to the Nutrient mix (75 points instead of 55). Leave it empty until the foods people eat
+    // have values for both: until then every score would be withheld for thin data (WEEKLY_BREAKDOWN_PLAN.md 5.5, Phase 4).
+    "SCORE_MODERATION": "",
+    // "1" shows an EXPERIMENTAL suggestion of maintenance energy from four weeks of logs and the weight trend. Nothing validates it
+    // (WEEKLY_BREAKDOWN_PLAN.md 4.9); it is never applied to a target, and logs usually run low, so it reads low.
+    "CALIBRATION": "",
+    // "1" makes every profile route need the profile's secret, not only the health ones (WEEKLY_BREAKDOWN_PLAN.md 8.3.2). Turn it on
+    // after every friend has updated the app and claimed a secret: the Vapi webhook has its own token and is not affected.
+    "REQUIRE_SECRET": "",
+    // "1" only inside the app, which runs this same code on the phone's own SQLite (app/src/embedded): Vapi cannot call a phone, so the
+    // assistant's save_foods tool becomes a client-side tool the app hands to the webhook handler. Always empty on a deployed Worker.
+    "ON_DEVICE": ""
   },
+  // Empties call transcripts older than 30 days, once a day (plan 8.3.3).
+  "triggers": { "crons": ["17 3 * * *"] },
   "secrets": { "required": ["APP_TOKEN"] }
 }

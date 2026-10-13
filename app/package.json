@@ -9,8 +9,9 @@
     "adb:reverse": "adb reverse tcp:8787 tcp:8787 && adb reverse tcp:8081 tcp:8081",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "postinstall": "patch-package"
+    "test": "node scripts/gen-migrations.js --check && jest",
+    "postinstall": "patch-package",
+    "gen:migrations": "node scripts/gen-migrations.js"
   },
   "dependencies": {
     "@daily-co/react-native-daily-js": "^0.88.0",
@@ -20,6 +21,7 @@
     "@gluestack-ui/utils": "^3.0.15",
     "@legendapp/motion": "^2.5.3",
     "@notifee/react-native": "^9.1.8",
+    "@op-engineering/op-sqlite": "^18.2.5",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "^8.6.0",
     "@react-navigation/bottom-tabs": "^7.13.0",
@@ -37,6 +39,7 @@
     "react-native-background-timer": "^2.4.1",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-get-random-values": "^2.0.0",
+    "react-native-keychain": "^10.0.0",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-permissions": "^5.5.1",
     "react-native-reanimated": "^4.2.1",

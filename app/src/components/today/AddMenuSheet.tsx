@@ -36,7 +36,7 @@ export function AddMenuSheet({
           tile
           icon={Pencil}
           title="Add manually"
-          subtitle="Type the foods and quantities yourself"
+          subtitle="Pick from your usual foods, or search"
           onPress={() => {
             onClose();
             onManual();

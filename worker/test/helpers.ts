@@ -12,11 +12,12 @@ export interface ApiResult<T = any> {
 export async function api<T = any>(
   method: string,
   path: string,
-  opts: { body?: unknown; userId?: string; token?: string | null; raw?: string } = {},
+  opts: { body?: unknown; userId?: string; token?: string | null; raw?: string; secret?: string } = {},
 ): Promise<ApiResult<T>> {
   const headers: Record<string, string> = {};
   if (opts.token !== null) headers.authorization = `Bearer ${opts.token ?? APP_TOKEN}`;
   if (opts.userId) headers['x-user-id'] = opts.userId;
+  if (opts.secret) headers['x-profile-secret'] = opts.secret;
   let body: string | undefined;
   if (opts.raw !== undefined) body = opts.raw;
   else if (opts.body !== undefined) body = JSON.stringify(opts.body);
@@ -39,6 +40,13 @@ export async function createProfile(name = unique('User'), extra: Record<string,
   const res = await api('POST', '/profiles', { body: { name, ...extra } });
   if (res.status !== 201) throw new Error(`createProfile ${res.status} ${res.text}`);
   return res.body.profile.id as string;
+}
+
+/** A new profile and its one-time secret, as the app receives them. */
+export async function createProfileWithSecret(name = unique('User'), extra: Record<string, unknown> = {}): Promise<{ userId: string; secret: string; name: string }> {
+  const res = await api('POST', '/profiles', { body: { name, ...extra } });
+  if (res.status !== 201) throw new Error(`createProfile ${res.status} ${res.text}`);
+  return { userId: res.body.profile.id as string, secret: res.body.secret as string, name };
 }
 
 export async function webhookToken(userId: string): Promise<string> {

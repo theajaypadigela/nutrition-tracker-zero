@@ -1,6 +1,6 @@
 import { indexFromResults, indexStatements } from '../db/queries';
 import type { FoodIndex } from './match';
-import { resolveItem, type ItemStatus } from './nutrition';
+import { resolveItem, type ItemStatus } from './intake/items';
 
 interface AffectedRow {
   id: string;

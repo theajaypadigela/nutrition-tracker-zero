@@ -5,8 +5,15 @@ import { api, errorMessage } from '@/api/client';
 import { Button, Card, Field, Notice, Text } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import type { RootStackParamList } from '@/navigation/types';
+import { useAsync } from '@/hooks/useAsync';
+import { fill } from '@/i18n/fill';
+import { strings, where } from '@/i18n/strings';
 import { space } from '@/theme';
 import { conversionMode, servingsFrom } from '@/utils/conversion';
+import { conversionText } from './FoodEditorScreen';
+
+/** The helpings people measure cooked food in (the Worker asks the same question on save, plan 7.7). */
+const COOKED_SERVINGS = ['katori', 'bowl', 'plate', 'serving'];
 
 export default function UnitConversionScreen() {
   const navigation = useNavigation();
@@ -15,6 +22,9 @@ export default function UnitConversionScreen() {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether the food's numbers are for it raw: then a katori of it is the raw amount that goes into one, not the cooked weight.
+  const food = useAsync(() => api.getFood(params.foodId), [params.foodId]);
+  const rawNote = food.data?.form === 'raw' && COOKED_SERVINGS.includes(params.unit);
 
   const n = Number(value);
   const valid = Number.isFinite(n) && n > 0;
@@ -52,6 +62,12 @@ export default function UnitConversionScreen() {
         </>
       }
     >
+      {rawNote ? (
+        <Notice tone="warning" testID="conversion-raw-note">
+          {fill(strings.food.conversion.rawNote, { unit: params.unit })}
+        </Notice>
+      ) : null}
+
       <Card padding="xl">
         <View style={{ gap: space.xs }}>
           <Text variant="title2">1 {params.unit}</Text>
@@ -69,12 +85,12 @@ export default function UnitConversionScreen() {
 
       {servings ? (
         <Notice tone="success" title="Summary">
-          1 {params.unit} = {Math.round(servings * 1000) / 1000} × {params.baseUnit}
+          {conversionText(params.unit, servings, params.baseUnit)}
         </Notice>
       ) : null}
 
       <Text variant="caption" tone="muted">
-        Applies to everyone's items in {params.unit} for this food.
+        {where.unitConversionNote(params.unit)}
       </Text>
     </StackScreen>
   );

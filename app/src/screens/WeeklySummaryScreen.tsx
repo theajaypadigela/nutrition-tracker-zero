@@ -1,211 +1,225 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { BackHandler, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { View } from 'react-native';
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { SearchX } from 'lucide-react-native';
-import { api } from '@/api/client';
-import { Chip, EmptyState, ListGroup, LoadingState, Notice, SearchField, Segmented, Text } from '@/components/kit';
+import type { Assessment, NutrientInfo, NutrientReport } from '@/api/types';
+import {
+  Chip,
+  EmptyState,
+  ListGroup,
+  LoadingState,
+  Notice,
+  SearchField,
+  Segmented,
+  SectionHeader,
+  Text,
+} from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
-import { GoalSheet } from '@/components/report/GoalSheet';
-import { NutrientDetail } from '@/components/report/NutrientDetail';
-import { NutrientRow } from '@/components/report/NutrientRow';
-import { ScoreCard } from '@/components/report/ScoreCard';
-import { Toast } from '@/components/report/Toast';
-import { deviceTimeZone } from '@/components/TimezoneField';
-import { useAsync } from '@/hooks/useAsync';
+import { CoverageCard } from '@/components/report/CoverageCard';
+import { NutrientLine } from '@/components/report/NutrientLine';
+import { useToday } from '@/hooks/useToday';
+import { useWeeklyReport } from '@/hooks/useWeeklyReport';
+import { fill } from '@/i18n/fill';
+import { strings } from '@/i18n/strings';
+import type { RootStackParamList } from '@/navigation/types';
 import { useMeta } from '@/state/MetaContext';
-import { space, useTheme } from '@/theme';
-import type { Status } from '@/types/nutrition';
-import { addDays, localDateIn, weekStart } from '@/utils/dates';
-import { scoreOf, statusOf, weekRangeLabel } from '@/utils/nutrition';
-import { buildWeeklyNutrients } from '@/utils/week';
+import { space } from '@/theme';
+import { addDays, weekStart } from '@/utils/dates';
+import { isJudged, MIN_DAYS_FOR_SUMMARY, nutrientInfo } from '@/utils/report';
 
-type FilterValue = 'all' | Status;
+const t = strings.report.all;
 
-const FILTERS: { key: FilterValue; label: string; dot?: 'good' | 'warn' | 'bad' }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'good', label: 'On track', dot: 'good' },
-  { key: 'warn', label: 'Close', dot: 'warn' },
-  { key: 'bad', label: 'Off goal', dot: 'bad' },
+type FilterValue = 'all' | 'on_target' | 'worth_a_look' | 'not_judged';
+type Group = keyof typeof t.groups;
+
+const FILTERS: { key: FilterValue; label: string }[] = [
+  { key: 'all', label: t.filters.all },
+  { key: 'on_target', label: t.filters.onTarget },
+  { key: 'worth_a_look', label: t.filters.worthALook },
+  { key: 'not_judged', label: t.filters.notJudged },
 ];
 
-/** Every nutrient for one Monday-first week: score, search, filters, day chart, goals. */
+const FILTER_OF: Record<Assessment, FilterValue> = {
+  meets: 'on_target',
+  in_range: 'on_target',
+  close: 'worth_a_look',
+  below: 'worth_a_look',
+  over: 'worth_a_look',
+  well_over: 'worth_a_look',
+  outside: 'worth_a_look',
+  unknown: 'not_judged',
+  amount_only: 'not_judged',
+};
+
+const GROUP_ORDER: Group[] = ['energy_and_macros', 'get_enough', 'keep_in_check', 'vitamins_and_minerals'];
+
+/** The catalogue says where a nutrient sits; if it is silent (an offline fallback), the kind decides. */
+function groupOf(info: NutrientInfo | undefined, report: NutrientReport): Group {
+  if (info?.group) return info.group;
+  const kind = info?.kind ?? report.target?.kind ?? 'amount';
+  return kind === 'energy' || kind === 'range'
+    ? 'energy_and_macros'
+    : kind === 'limit' || kind === 'amount'
+      ? 'keep_in_check'
+      : 'get_enough';
+}
+
+/** Every nutrient for one Monday-first week: the days that count, search, filters. The detail of each opens on its own screen. */
 export default function WeeklySummaryScreen() {
   const navigation = useNavigation();
-  const { colors } = useTheme();
+  const { params } = useRoute<RouteProp<RootStackParamList, 'WeeklySummary'>>();
   const meta = useMeta();
-  const today = localDateIn(deviceTimeZone());
+  const today = useToday();
   const thisWeek = weekStart(today);
-  const [weekIdx, setWeekIdx] = useState(0);
+  const [weekIdx, setWeekIdx] = useState(() =>
+    params?.start ? Math.min(0, Math.round((Date.parse(params.start) - Date.parse(thisWeek)) / (7 * 86_400_000))) : 0,
+  );
   const start = addDays(thisWeek, weekIdx * 7);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterValue>('all');
   const [valueMode, setValueMode] = useState<'absolute' | 'percent'>('absolute');
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [goalSheetId, setGoalSheetId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-
-  const range = useAsync(() => api.getDays(start, addDays(start, 6)), [start]);
-
-  const allNutrients = useMemo(
-    () => (range.data ? buildWeeklyNutrients(range.data, start, today, meta.nutrients) : []),
-    [range.data, start, today, meta.nutrients],
+  const range = useWeeklyReport(start);
+  useFocusEffect(
+    useCallback(() => {
+      range.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [start]),
   );
-  // Only nutrients with a goal get a verdict, so only they count toward the score and filters.
-  const withGoal = useMemo(() => allNutrients.filter(n => n.goal > 0), [allNutrients]);
 
-  const summary = useMemo(() => {
-    const onTrack = withGoal.filter(n => statusOf(n) === 'good').length;
-    return {
-      score: scoreOf(withGoal),
-      onTrack,
-      tracked: allNutrients.filter(n => n.amount > 0).length,
-      hitRate: withGoal.length ? Math.round((onTrack / withGoal.length) * 100) : 0,
-    };
-  }, [allNutrients, withGoal]);
+  const report = range.report;
+  const judgedWeek = !!report && isJudged(report.coverage.confidence);
 
-  const counts = useMemo(() => {
-    const acc = { all: allNutrients.length, good: 0, warn: 0, bad: 0 };
-    withGoal.forEach(n => {
-      acc[statusOf(n)]++;
+  // One row per nutrient: the four-week report stands in for a vitamin, because that is the window that judges it.
+  const rows = useMemo(() => {
+    if (!report) return [];
+    const four = new Map(report.fourWeek.map(n => [n.nutrient, n]));
+    return report.nutrients.map(n => {
+      const f = four.get(n.nutrient);
+      const row = f ?? n;
+      const info = meta.nutrients.find(x => x.key === n.nutrient);
+      const label = nutrientInfo(meta.nutrients, n.nutrient);
+      return {
+        key: n.nutrient,
+        report: row,
+        window: (f ? 'four_weeks' : 'week') as 'week' | 'four_weeks',
+        name: label.label,
+        unit: label.unit,
+        group: groupOf(info, row),
+        judged: f ? row.assessedDays >= MIN_DAYS_FOR_SUMMARY : judgedWeek,
+      };
     });
-    return acc;
-  }, [allNutrients, withGoal]);
+  }, [report, meta.nutrients, judgedWeek]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return allNutrients.filter(n => {
-      const matchesQuery = q === '' || n.name.toLowerCase().includes(q);
-      const matchesFilter = filter === 'all' || (n.goal > 0 && statusOf(n) === filter);
+    return rows.filter(r => {
+      const matchesQuery = q === '' || r.name.toLowerCase().includes(q);
+      const matchesFilter =
+        filter === 'all' || (r.judged ? FILTER_OF[r.report.assessment] === filter : filter === 'not_judged');
       return matchesQuery && matchesFilter;
     });
-  }, [allNutrients, query, filter]);
+  }, [rows, query, filter]);
 
-  const detailNutrient = allNutrients.find(n => n.id === openId) ?? null;
-  const goalSheetNutrient = allNutrients.find(n => n.id === goalSheetId) ?? null;
-
-  // The nutrient detail replaces the list in place, so the system back button closes it first.
-  useFocusEffect(
-    useCallback(() => {
-      if (!detailNutrient) return undefined;
-      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        setOpenId(null);
-        return true;
-      });
-      return () => sub.remove();
-    }, [detailNutrient]),
-  );
-
-  const handleSaveGoal = async (newWeeklyGoal: number) => {
-    if (!goalSheetNutrient) return;
-    const { id, name } = goalSheetNutrient;
-    setGoalSheetId(null);
-    try {
-      await api.updateGoals({ [id]: Number((newWeeklyGoal / 7).toFixed(2)) });
-      setToast(`Goal updated for ${name}`);
-      range.reload();
-    } catch {
-      setToast(`Could not update the goal for ${name}`);
-    }
-  };
-
-  const openGoal = (id: string) => {
-    // A nutrient without a goal has nothing for the slider to scale; set it on the goals screen.
-    if (allNutrients.find(n => n.id === id)?.dailyGoal) setGoalSheetId(id);
-    else navigation.navigate('Goals');
-  };
-
-  const overlays = (
-    <>
-      <GoalSheet
-        visible={!!goalSheetNutrient}
-        nutrient={goalSheetNutrient}
-        baseGoal={(goalSheetNutrient?.dailyGoal ?? 0) * 7}
-        onClose={() => setGoalSheetId(null)}
-        onSave={handleSaveGoal}
-      />
-      <Toast message={toast} onHide={() => setToast(null)} />
-    </>
-  );
-
-  if (detailNutrient) {
-    return (
-      <>
-        <NutrientDetail nutrient={detailNutrient} onBack={() => setOpenId(null)} onSetGoal={() => openGoal(detailNutrient.id)} />
-        {overlays}
-      </>
-    );
-  }
+  const usesReference = report?.mode === 'generic' && rows.some(r => r.report.target);
+  const hidden = report?.display.numbersHidden === true;
 
   return (
-    <>
-      <StackScreen
-        title="Weekly breakdown"
-        subtitle="Every nutrient, scored against your goals"
-        refreshing={range.loading && !!range.data}
-        onRefresh={range.reload}
-        gap={space.lg}
-      >
-        {range.error ? <Notice tone="danger">{range.error}</Notice> : null}
+    <StackScreen
+      title={t.title}
+      subtitle={t.subtitle}
+      refreshing={range.refreshing}
+      onRefresh={range.reload}
+      gap={space.lg}
+    >
+      {range.error ? <Notice tone="danger">{range.error}</Notice> : null}
 
-        <ScoreCard
-          weekLabel={weekRangeLabel(start)}
-          weekIdx={weekIdx}
-          onPrevWeek={() => setWeekIdx(w => w - 1)}
-          onNextWeek={() => setWeekIdx(w => Math.min(0, w + 1))}
-          score={summary.score}
-          onTrack={summary.onTrack}
-          tracked={summary.tracked}
-          hitRate={summary.hitRate}
-        />
+      <CoverageCard
+        weekIdx={weekIdx}
+        start={start}
+        onPrevWeek={() => setWeekIdx(w => w - 1)}
+        onNextWeek={() => setWeekIdx(w => Math.min(0, w + 1))}
+        report={report ?? undefined}
+        onOpenPending={() => navigation.navigate('Main', { screen: 'Uncached' })}
+      />
 
-        <SearchField value={query} onChangeText={setQuery} placeholder="Search vitamins, minerals, macros…" />
+      {range.locked ? (
+        <Notice
+          tone="info"
+          action={{ label: strings.report.unlock, onPress: () => navigation.navigate('RecoveryEntry') }}
+        >
+          {strings.report.locked}
+        </Notice>
+      ) : null}
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-          {FILTERS.map(f => (
-            <Chip
-              key={f.key}
-              label={f.label}
-              count={counts[f.key]}
-              selected={filter === f.key}
-              dot={f.dot ? { good: colors.primary, warn: colors.warning, bad: colors.danger }[f.dot] : undefined}
-              onPress={() => setFilter(f.key)}
-            />
-          ))}
-        </View>
+      {hidden ? (
+        <EmptyState title={strings.lowPressure.reportTitle} body={strings.lowPressure.reportBody} />
+      ) : (
+        <>
+          <SearchField value={query} onChangeText={setQuery} placeholder={t.search} />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text variant="small" tone="muted">
-            {filtered.length} {filtered.length === 1 ? 'nutrient' : 'nutrients'}
-          </Text>
-          <View style={{ width: 168 }}>
-            <Segmented
-              options={[
-                { value: 'absolute', label: 'Amount' },
-                { value: 'percent', label: '%' },
-              ]}
-              value={valueMode}
-              onChange={setValueMode}
-            />
-          </View>
-        </View>
-
-        {range.loading && allNutrients.length === 0 ? (
-          <LoadingState label="Loading nutrients…" />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={SearchX}
-            title="No matches"
-            body={query ? 'Try a different search.' : 'No nutrients tracked for this week yet.'}
-          />
-        ) : (
-          <ListGroup>
-            {filtered.map(n => (
-              <NutrientRow key={n.id} nutrient={n} valueMode={valueMode} onPress={() => setOpenId(n.id)} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            {FILTERS.map(f => (
+              <Chip key={f.key} label={f.label} selected={filter === f.key} onPress={() => setFilter(f.key)} />
             ))}
-          </ListGroup>
-        )}
-      </StackScreen>
-      {overlays}
-    </>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text variant="small" tone="muted">
+              {filtered.length === 1 ? t.countOne : fill(t.count, { n: filtered.length })}
+            </Text>
+            <View style={{ width: 168 }}>
+              <Segmented
+                options={[
+                  { value: 'absolute', label: t.amount },
+                  { value: 'percent', label: t.percent },
+                ]}
+                value={valueMode}
+                onChange={setValueMode}
+              />
+            </View>
+          </View>
+
+          {range.loading ? (
+            <LoadingState label={t.loading} />
+          ) : filtered.length === 0 && report ? (
+            <EmptyState icon={SearchX} title={t.noMatches} body={query ? t.tryAnother : t.emptyGroup} />
+          ) : (
+            GROUP_ORDER.map(g => {
+              const inGroup = filtered.filter(r => r.group === g);
+              if (inGroup.length === 0) return null;
+              return (
+                <View key={g} style={{ gap: space.md }}>
+                  <SectionHeader title={t.groups[g]} />
+                  <ListGroup>
+                    {inGroup.map(r => (
+                      <NutrientLine
+                        key={r.key}
+                        report={r.report}
+                        name={r.name}
+                        unit={r.unit}
+                        mode={report!.mode}
+                        judged={r.judged}
+                        valueMode={valueMode}
+                        note={r.key === 'sugar' ? strings.report.groups.sugarNote : undefined}
+                        onPress={() => navigation.navigate('Nutrient', { key: r.key, start, window: r.window })}
+                      />
+                    ))}
+                  </ListGroup>
+                </View>
+              );
+            })
+          )}
+        </>
+      )}
+
+      {usesReference ? (
+        <Text variant="caption" tone="muted" testID="reference-note">
+          {strings.disclaimer.referenceLong}
+        </Text>
+      ) : null}
+      <Text variant="caption" tone="muted">
+        {strings.disclaimer.footer} {t.note}
+      </Text>
+    </StackScreen>
   );
 }
