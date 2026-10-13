@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Target } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
-import AppBar from '@/components/common/AppBar';
-import { LoadingState, Notice } from '@/components/common/Feedback';
-import { ActionButton, BottomActionBar, BOTTOM_BAR_CLEARANCE, BOTTOM_BAR_SPACE, FormInput, SectionCard } from '@/components/common/Form';
-import { VStack } from '@/components/ui/vstack';
+import type { Goal } from '@/api/types';
+import { Button, FormGroup, InlineField, ListGroup, LoadingState, Notice } from '@/components/kit';
+import { StackScreen } from '@/components/layout/StackScreen';
 import { useAsync } from '@/hooks/useAsync';
-import { useKeyboardAwareScroll } from '@/hooks/useKeyboard';
-import { tokens } from '@/theme/tokens';
+
+/** Targets are grouped so the ones people set are first and the long tail of vitamins is last. */
+const SECTIONS: { title: string; keys: string[] | null }[] = [
+  { title: 'Energy and macros', keys: ['calories', 'protein', 'carbs', 'fat'] },
+  { title: 'Limits and fiber', keys: ['fiber', 'sugar', 'sodium'] },
+  { title: 'Vitamins and minerals', keys: null },
+];
 
 export default function GoalsScreen() {
   const navigation = useNavigation();
-  const { keyboardHeight, scrollProps } = useKeyboardAwareScroll(BOTTOM_BAR_CLEARANCE);
   const goals = useAsync(() => api.getGoals(), []);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -50,52 +51,45 @@ export default function GoalsScreen() {
     }
   };
 
+  const named = new Set(SECTIONS.flatMap(s => s.keys ?? []));
+  const groupOf = (keys: string[] | null): Goal[] =>
+    (goals.data ?? []).filter(g => (keys ? keys.includes(g.key) : !named.has(g.key)));
+
   return (
-    <View className="flex-1">
-      <AppBar title="Daily goals" subtitle="Leave a field empty to use the default" variant="secondary" showBackButton />
-      {!goals.data ? (
-        goals.error ? (
-          <View className="p-6">
-            <Notice tone="error">{goals.error}</Notice>
-          </View>
-        ) : (
-          <LoadingState color={tokens.dashboard.green} />
-        )
-      ) : (
-        <ScrollView
-          {...scrollProps}
-          className="flex-1"
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: BOTTOM_BAR_SPACE + keyboardHeight }}
-        >
-          <VStack className="p-6 gap-5">
-            <SectionCard
-              icon={Target}
-              iconColor={tokens.icon.green}
-              iconBg="bg-emerald-50"
-              title="Daily targets"
-              subtitle="Today and the reports compare against these"
-            >
-              <View className="flex-row flex-wrap justify-between gap-y-3">
-                {goals.data.map(g => (
-                  <FormInput
-                    key={g.key}
-                    className="w-[48%]"
-                    label={`${g.label} (${g.unit})`}
-                    value={values[g.key] ?? ''}
-                    onChangeText={v => setValues({ ...values, [g.key]: v })}
-                    keyboardType="decimal-pad"
-                    placeholder={g.defaultGoal != null ? `default ${g.defaultGoal}` : 'no goal'}
-                  />
-                ))}
-              </View>
-            </SectionCard>
-          </VStack>
-        </ScrollView>
-      )}
-      <BottomActionBar error={error}>
-        <ActionButton title="Save goals" onPress={save} loading={saving} disabled={!goals.data} />
-      </BottomActionBar>
-    </View>
+    <StackScreen
+      title="Daily goals"
+      subtitle="Leave a field empty to use the default"
+      footer={
+        <>
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <Button label="Save goals" size="lg" fullWidth loading={saving} disabled={!goals.data} onPress={save} />
+        </>
+      }
+    >
+      {!goals.data ? goals.error ? <Notice tone="danger">{goals.error}</Notice> : <LoadingState /> : null}
+
+      {goals.data
+        ? SECTIONS.map(section => {
+            const rows = groupOf(section.keys);
+            if (rows.length === 0) return null;
+            return (
+              <FormGroup key={section.title} title={section.title}>
+                <ListGroup>
+                  {rows.map(g => (
+                    <InlineField
+                      key={g.key}
+                      label={g.label}
+                      unit={g.unit}
+                      value={values[g.key] ?? ''}
+                      onChangeText={v => setValues({ ...values, [g.key]: v })}
+                      placeholder={g.defaultGoal != null ? String(g.defaultGoal) : 'None'}
+                    />
+                  ))}
+                </ListGroup>
+              </FormGroup>
+            );
+          })
+        : null}
+    </StackScreen>
   );
 }

@@ -1,23 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { tokens } from '@/theme/tokens';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { buildHealthReport, type HealthItem, type HealthStatus } from '@/services/calls/health';
+import { Button, Card, LoadingState, Notice, Text } from '@/components/kit';
+import { StackScreen } from '@/components/layout/StackScreen';
 import { useAsync } from '@/hooks/useAsync';
-
-const STATUS_COLOR: Record<HealthStatus, string> = {
-  ok: tokens.settings.statusOk,
-  warn: tokens.settings.statusWarn,
-  error: tokens.settings.statusError,
-};
+import { buildHealthReport, type HealthItem, type HealthStatus } from '@/services/calls/health';
+import { createStyles, radius, space, useTheme } from '@/theme';
 
 const STATUS_LABEL: Record<HealthStatus, string> = {
   ok: 'OK',
@@ -25,7 +13,15 @@ const STATUS_LABEL: Record<HealthStatus, string> = {
   error: 'Action required',
 };
 
+const useStyles = createStyles(() => ({
+  head: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  dot: { width: 10, height: 10, borderRadius: radius.pill },
+}));
+
+/** Whether the daily call can actually ring on time: each requirement, its state, and a fix. */
 export default function ReminderHealthScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const report = useAsync(() => buildHealthReport(), []);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -45,100 +41,53 @@ export default function ReminderHealthScreen() {
     }
   };
 
-  if (report.loading && !report.data) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={tokens.settings.statusOk} />
-      </View>
-    );
-  }
-
   const degraded = report.data?.some(item => item.status !== 'ok');
+  const statusColor: Record<HealthStatus, string> = { ok: colors.primary, warn: colors.warning, error: colors.danger };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={report.loading} onRefresh={report.reload} />}
+    <StackScreen
+      title="Reminder health"
+      subtitle="Can your daily call ring on time?"
+      refreshing={report.loading && !!report.data}
+      onRefresh={report.reload}
     >
-      <Text style={styles.title}>Reminder health</Text>
-      <Text style={styles.subtitle}>
-        These settings determine whether your daily call actually rings on time. Everything should be OK.
-      </Text>
+      {report.loading && !report.data ? <LoadingState /> : null}
 
-      {degraded && (
-        <View style={styles.degradedBanner}>
-          <Text style={styles.degradedText}>
-            The daily call may be late or silent. Fix the items marked below.
-          </Text>
-        </View>
-      )}
+      {report.data ? (
+        degraded ? (
+          <Notice tone="warning">The daily call may be late or silent. Fix the items marked below.</Notice>
+        ) : (
+          <Notice tone="success">Everything is set. Your daily call will ring on time.</Notice>
+        )
+      ) : null}
 
       {report.data?.map(item => (
-        <View key={item.id} style={styles.row}>
-          <View style={styles.rowHeader}>
-            <View
-              style={[styles.dot, { backgroundColor: STATUS_COLOR[item.status] }]}
-            />
-            <Text style={styles.rowTitle}>{item.title}</Text>
-            <Text style={[styles.statusTag, { color: STATUS_COLOR[item.status] }]}>
+        <Card key={item.id}>
+          <View style={styles.head}>
+            <View style={[styles.dot, { backgroundColor: statusColor[item.status] }]} />
+            <Text variant="bodyStrong" style={{ flex: 1 }}>
+              {item.title}
+            </Text>
+            <Text variant="smallStrong" tone={item.status === 'ok' ? 'primary' : item.status === 'warn' ? 'warning' : 'danger'}>
               {STATUS_LABEL[item.status]}
             </Text>
           </View>
-          <Text style={styles.detail}>{item.detail}</Text>
-          {item.fix && (
-            <TouchableOpacity
-              style={styles.fixButton}
-              onPress={() => runFix(item)}
-              disabled={busyId === item.id}
-            >
-              <Text style={styles.fixButtonText}>
-                {busyId === item.id ? 'Opening…' : item.fix.label}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+          <Text variant="small" tone="secondary" style={{ marginTop: space.sm }}>
+            {item.detail}
+          </Text>
+          {item.fix ? (
+            <View style={{ marginTop: space.lg }}>
+              <Button
+                label={busyId === item.id ? 'Opening…' : item.fix.label}
+                variant="soft"
+                fullWidth
+                disabled={busyId === item.id}
+                onPress={() => runFix(item)}
+              />
+            </View>
+          ) : null}
+        </Card>
       ))}
-    </ScrollView>
+    </StackScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1, backgroundColor: tokens.settings.bg },
-  content: { padding: 24 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8, color: tokens.settings.ink },
-  subtitle: { fontSize: 14, color: tokens.settings.inkSoft, marginBottom: 20, lineHeight: 20 },
-  degradedBanner: {
-    backgroundColor: tokens.settings.degradedBg,
-    borderColor: tokens.settings.degradedLine,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-  },
-  degradedText: { color: tokens.settings.degradedInk, fontSize: 13, lineHeight: 18 },
-  row: {
-    backgroundColor: tokens.settings.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: tokens.settings.shadow,
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-  },
-  rowHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
-  rowTitle: { fontSize: 16, fontWeight: '600', color: tokens.settings.ink, flex: 1 },
-  statusTag: { fontSize: 12, fontWeight: '600' },
-  detail: { fontSize: 13, color: tokens.settings.inkFaint, lineHeight: 18 },
-  fixButton: {
-    marginTop: 12,
-    backgroundColor: tokens.settings.statusOk,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  fixButtonText: { color: tokens.settings.surface, fontSize: 14, fontWeight: '600' },
-});

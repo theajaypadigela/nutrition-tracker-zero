@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark theme: the app's darkPalette (app/src/theme/palette.ts) under native names. -->
+<resources>
+    <color name="app_background">#0D0E0D</color>
+    <color name="app_accent">#4CBF8A</color>
+
+    <color name="call_background">#0D0E0D</color>
+    <color name="call_surface">#161817</color>
+    <color name="call_avatar">#14261D</color>
+    <color name="call_border">#2B2F2D</color>
+
+    <color name="call_text_primary">#F1F2EE</color>
+    <color name="call_text_secondary">#B7BAB3</color>
+    <color name="call_text_muted">#868A83</color>
+
+    <color name="call_brand">#4CBF8A</color>
+    <color name="call_brand_ring">#334CBF8A</color>
+
+    <color name="call_accept">#4CBF8A</color>
+    <color name="call_on_accept">#06140D</color>
+    <color name="call_decline">#F0776E</color>
+    <color name="call_on_decline">#1C0907</color>
+</resources>

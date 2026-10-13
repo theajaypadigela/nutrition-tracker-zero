@@ -1,7 +1,7 @@
 import type { DayRange, NutrientInfo } from '@/api/types';
 import type { WeeklyNutrient } from '@/types/nutrition';
-import { inferDirection } from '@/components/nutrition-report/weekly-summary/tokens';
 import { addDays } from './dates';
+import { inferDirection } from './nutrition';
 
 /** Days of the Monday-first week starting at `start` that are not in the future (0–7). */
 export function daysElapsed(start: string, today: string): number {

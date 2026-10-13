@@ -26,7 +26,10 @@ class MainActivity : ReactActivity() {
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    // react-native-screens cannot restore its fragments from saved state; Android would try to
+    // after process death, a font-size or display-size change, or a fold. Passing null starts
+    // clean instead of crashing with "Screen fragments should never be restored".
+    super.onCreate(null)
     handleAnsweredCall(intent)
     handleMissedAction(intent)
   }

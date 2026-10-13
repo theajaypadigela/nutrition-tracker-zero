@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Native full-screen incoming-call screen. Mirrors the design of the (now retired) JS
-  IncomingCallScreen.tsx so the ring UI looks identical whether the app is open or killed.
-  Strings are set at runtime from the call payload (assistant name, subtitle) — no copy here.
+  Native full-screen incoming-call screen. Drawn in XML + Kotlin (no React bridge) so it appears
+  instantly over the lockscreen even from a killed process. Strings are set at runtime from the
+  call payload (assistant name, subtitle) — no copy here, except the static labels.
+
+  Each TextView carries a font tag ("regular" / "medium" / "semibold") that
+  IncomingCallActivity maps to the bundled Inter files.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -12,8 +15,8 @@
     android:gravity="center_horizontal"
     android:paddingStart="24dp"
     android:paddingEnd="24dp"
-    android:paddingTop="72dp"
-    android:paddingBottom="48dp"
+    android:paddingTop="24dp"
+    android:paddingBottom="40dp"
     android:fitsSystemWindows="true">
 
     <!-- "incoming call" pill -->
@@ -22,36 +25,42 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_call_pill"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="5dp"
-        android:paddingBottom="5dp"
-        android:text="incoming call"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:tag="medium"
+        android:text="Incoming call"
         android:textColor="@color/call_text_muted"
-        android:textSize="11sp" />
+        android:textSize="12sp" />
+
+    <!-- Pushes the identity block to the optical centre of the space above the buttons -->
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
     <!-- Avatar with presence dot -->
     <FrameLayout
-        android:layout_width="96dp"
-        android:layout_height="96dp"
-        android:layout_marginTop="26dp">
+        android:layout_width="112dp"
+        android:layout_height="112dp">
 
         <ImageView
             android:id="@+id/avatar"
-            android:layout_width="96dp"
-            android:layout_height="96dp"
+            android:layout_width="112dp"
+            android:layout_height="112dp"
             android:background="@drawable/bg_avatar_circle"
-            android:padding="25dp"
+            android:padding="30dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_assistant_bot" />
 
         <View
             android:id="@+id/presence_dot"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
             android:layout_gravity="bottom|end"
-            android:layout_marginEnd="4dp"
-            android:layout_marginBottom="4dp"
+            android:layout_marginEnd="6dp"
+            android:layout_marginBottom="6dp"
             android:background="@drawable/bg_presence_dot" />
     </FrameLayout>
 
@@ -60,30 +69,31 @@
         android:id="@+id/agent_name"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="22dp"
+        android:layout_marginTop="28dp"
+        android:tag="semibold"
         android:textColor="@color/call_text_primary"
-        android:textSize="22sp"
-        android:textStyle="normal" />
+        android:textSize="28sp" />
 
-    <!-- Context subtitle (set at runtime: "Meals" / "Habits") -->
+    <!-- Context subtitle (set at runtime) -->
     <TextView
         android:id="@+id/subtitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textColor="@color/call_text_faint"
-        android:textSize="13sp" />
+        android:tag="regular"
+        android:textColor="@color/call_text_muted"
+        android:textSize="15sp" />
 
     <!-- Verified pill -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="18dp"
         android:background="@drawable/bg_call_pill"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:paddingEnd="14dp"
         android:paddingTop="6dp"
         android:paddingBottom="6dp">
 
@@ -98,15 +108,16 @@
             android:id="@+id/verified_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:tag="medium"
             android:textColor="@color/call_text_secondary"
-            android:textSize="11sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- Spacer pushes the actions to the bottom -->
     <Space
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1.35" />
 
     <!-- Action row: Decline | Accept -->
     <LinearLayout
@@ -120,26 +131,28 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:layout_marginEnd="28dp">
+            android:layout_marginEnd="40dp">
 
             <ImageView
                 android:id="@+id/decline_button"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
                 android:background="@drawable/bg_decline_button"
                 android:clickable="true"
                 android:focusable="true"
-                android:padding="22dp"
+                android:padding="24dp"
                 android:contentDescription="Decline"
-                android:src="@drawable/ic_call_decline" />
+                android:src="@drawable/ic_call_decline"
+                android:tint="@color/call_on_decline" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
+                android:tag="medium"
                 android:text="Decline"
                 android:textColor="@color/call_text_secondary"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -147,26 +160,28 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:layout_marginStart="28dp">
+            android:layout_marginStart="40dp">
 
             <ImageView
                 android:id="@+id/accept_button"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
                 android:background="@drawable/bg_accept_button"
                 android:clickable="true"
                 android:focusable="true"
-                android:padding="22dp"
+                android:padding="24dp"
                 android:contentDescription="Accept"
-                android:src="@drawable/ic_call_answer" />
+                android:src="@drawable/ic_call_answer"
+                android:tint="@color/call_on_accept" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
+                android:tag="medium"
                 android:text="Accept"
                 android:textColor="@color/call_text_secondary"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
 

@@ -1,3 +1,8 @@
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="@color/call_surface_avatar" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/call_avatar" />
+            <stroke android:width="1dp" android:color="@color/call_brand_ring" />
+        </shape>
+    </item>
+</layer-list>

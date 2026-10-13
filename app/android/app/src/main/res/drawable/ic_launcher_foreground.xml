@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The brand leaf, centred in the adaptive icon's safe zone. -->
+    <group
+        android:scaleX="2.5"
+        android:scaleY="2.5"
+        android:translateX="22.6"
+        android:translateY="22.75">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M20,4C11,4 4.5,8.5 4.5,16.5c0,1.4 0.3,2.6 0.8,3.7C7,14 11.5,10.5 18,9.5c-5,2 -9,5.6 -10.6,11c1,0.4 2.2,0.6 3.5,0.6C19,21 21,12 20,4Z" />
+    </group>
+</vector>

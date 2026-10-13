@@ -5,6 +5,7 @@ import { PERMISSIONS, RESULTS, check, request } from 'react-native-permissions';
 import { api, errorMessage } from '@/api/client';
 import type { CallKind } from '@/api/types';
 import { reminderLog } from '@/services/calls/logger';
+import { describeVapiError, isMeetingEnded } from '@/services/calls/vapiErrors';
 import {
   cancelAutoRetry,
   consumePendingHangup,
@@ -26,13 +27,6 @@ async function ensureMicrophone(): Promise<boolean> {
   // Unavailable means the handler couldn't be queried; let the OS capture prompt decide.
   if (current === RESULTS.UNAVAILABLE) return true;
   return (await request(perm)) === RESULTS.GRANTED;
-}
-
-function describeVapiError(e: unknown): string {
-  const any = e as any;
-  const msg = any?.error?.message ?? any?.errorMsg ?? any?.message ?? any?.error ?? e;
-  const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
-  return (text || 'Voice call failed').slice(0, 300);
 }
 
 /**
@@ -144,6 +138,14 @@ export function useVapiCall() {
       });
       vapi.on('error', (e: unknown) => {
         const reason = describeVapiError(e);
+        // The server hanging up mid-call is a finished call, not a failure.
+        if (statusRef.current === 'active' && isMeetingEnded(e)) {
+          reminderLog.info('vapi.ended_by_server', reason);
+          update('ended');
+          setIsSpeaking(false);
+          dismissIncomingCall();
+          return;
+        }
         reminderLog.warn('vapi.error', reason);
         if (statusRef.current === 'connecting') fail(reason);
         else if (statusRef.current === 'active') {

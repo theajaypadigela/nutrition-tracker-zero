@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Text } from '@/components/ui/text';
-import { QuickPill } from './common/Form';
+import { Chip, Text } from '@/components/kit';
+import { space } from '@/theme';
 
 export const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 
@@ -21,13 +21,13 @@ export function timezoneOptions(value: string): string[] {
 /** The call rings at call time in this zone. */
 export default function TimezoneField({ value, onChange }: { value: string; onChange: (tz: string) => void }) {
   return (
-    <View className="gap-2">
-      <View className="flex-row flex-wrap gap-2">
+    <View style={{ gap: space.sm }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
         {timezoneOptions(value).map(tz => (
-          <QuickPill key={tz} label={tz} selected={tz === value} onPress={() => onChange(tz)} />
+          <Chip key={tz} label={tz} selected={tz === value} onPress={() => onChange(tz)} />
         ))}
       </View>
-      <Text size="xs" className="text-gray-500">
+      <Text variant="caption" tone="muted">
         Your call rings at the call time in this time zone.
       </Text>
     </View>

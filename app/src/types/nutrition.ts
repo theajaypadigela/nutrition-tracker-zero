@@ -1,60 +1,13 @@
-import { ReactNode } from 'react';
+/** Nutrition view models for the report screens. */
 
-/**
- * Nutrition view models for the report screens, ported from the old app's
- * src/types/nutrition.ts (only the shapes these screens use).
- */
-
-// Simple current/goal pair — used by macro & micro summary cards
+// Simple current/goal pair: one nutrient's week so far
 export interface NutrientData {
   current: number;
   goal: number;
   weeklyGoal?: number;
 }
 
-export interface MacroNutrient {
-  label: string;
-  current: number;
-  goal: number;
-  weeklyGoal?: number;
-  unit: string;
-  icon: ReactNode;
-  color: string;
-  bgColor: string;
-  progressColor: string;
-  progressBgColor: string;
-  textColor: string;
-  borderColor: string;
-}
-
-export interface MicroNutrient {
-  key: string;
-  label: string;
-  current: number;
-  goal: number;
-  weeklyGoal?: number;
-  unit: string;
-  icon: ReactNode;
-  iconBg: string;
-  color: string;
-  status: string;
-  statusBg: string;
-  statusColor: string;
-}
-
-export interface MacroNutrients {
-  protein: NutrientData;
-  carbs: NutrientData;
-  fats: NutrientData;
-}
-
-export interface MicroNutrients {
-  sugar: NutrientData;
-  fiber: NutrientData;
-  sodium: NutrientData;
-}
-
-// Weekly summary view model (weekly-summary components)
+// Weekly summary view model
 export type Status = 'good' | 'warn' | 'bad';
 export type Direction = 'higher' | 'lower' | 'window';
 

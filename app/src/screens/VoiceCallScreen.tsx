@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { Plus } from 'lucide-react-native';
 import { api } from '@/api/client';
 import type { CallInfo, Item } from '@/api/types';
-import { FocusAwareStatusBar } from '@/components/common/Feedback';
-import { EditFoodDrawer } from '@/components/food-log/EditFoodDrawer';
+import { Badge, Button, Card, Divider, Text } from '@/components/kit';
+import { EditItemSheet } from '@/components/today/EditItemSheet';
 import VoiceSessionScreen, { type CallStatus } from '@/components/voice/VoiceSessionScreen';
 import { useVapiCall, type VoiceStatus } from '@/hooks/useVapiCall';
 import type { RootStackParamList } from '@/navigation/types';
-import { tokens } from '@/theme/tokens';
+import { space, useTheme } from '@/theme';
 import { formatNumber, formatQuantity } from '@/utils/format';
 
 const SESSION_STATUS: Record<VoiceStatus, CallStatus> = {
@@ -20,7 +21,7 @@ const SESSION_STATUS: Record<VoiceStatus, CallStatus> = {
 };
 
 const STATUS_TEXT: Record<VoiceStatus, string> = {
-  idle: 'Tap Start Call to log your meals by voice',
+  idle: 'Tap Start call to log your meals by voice',
   connecting: 'Connecting to the assistant',
   active: 'Tell the assistant what you ate today',
   ended: 'Your food check-in is over',
@@ -30,7 +31,7 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
 /** After the call, the webhook may land a moment later: poll the day briefly for this call's items. */
 function useCallOutcome(localDate: string | null, vapiCallId: string | null, ended: boolean, version: number) {
   const [items, setItems] = useState<Item[] | null>(null);
-  const [call, setCall] = useState<CallInfo | null>(null);
+  const [callRow, setCallRow] = useState<CallInfo | null>(null);
   useEffect(() => {
     if (!ended || !localDate || !vapiCallId) return;
     let cancelled = false;
@@ -43,7 +44,7 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
         const mine = day.items.filter(i => i.callId === vapiCallId && i.source === 'call');
         const row = day.calls.find(c => c.vapiCallId === vapiCallId) ?? null;
         setItems(mine);
-        setCall(row);
+        setCallRow(row);
         const settled = row && (row.status === 'tool_saved' || row.status === 'no_list' || row.status === 'failed') && row.endedReason;
         if (!settled && attempt < 6) setTimeout(tick, 2500);
       } catch {
@@ -55,7 +56,7 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
       cancelled = true;
     };
   }, [ended, localDate, vapiCallId, version]);
-  return { items, call };
+  return { items, call: callRow };
 }
 
 export default function VoiceCallScreen() {
@@ -79,7 +80,6 @@ export default function VoiceCallScreen() {
 
   return (
     <>
-      <FocusAwareStatusBar barStyle="light-content" />
       <VoiceSessionScreen
         title="Food check-in"
         statusText={status === 'error' && error ? error : STATUS_TEXT[status]}
@@ -94,142 +94,83 @@ export default function VoiceCallScreen() {
         onRetryPress={() => start(params.kind)}
         outcome={ended ? <Outcome items={outcome.items} call={outcome.call} onOpenItem={setEditing} /> : null}
       />
-      <EditFoodDrawer
-        item={editing}
-        isOpen={!!editing}
-        onClose={() => setEditing(null)}
-        onSaved={() => setVersion(v => v + 1)}
-      />
+      <EditItemSheet item={editing} isOpen={!!editing} onClose={() => setEditing(null)} onSaved={() => setVersion(v => v + 1)} />
     </>
   );
 }
 
-function Outcome({ items, call, onOpenItem }: { items: Item[] | null; call: CallInfo | null; onOpenItem: (item: Item) => void }) {
+/** What the call saved: the items (tap one to fix it), or why nothing was saved and a way to add the food by hand. */
+function Outcome({ items, call: callRow, onOpenItem }: { items: Item[] | null; call: CallInfo | null; onOpenItem: (item: Item) => void }) {
   const navigation = useNavigation();
-  if (items === null) return <Text style={styles.muted}>Checking what was saved…</Text>;
+  const { colors } = useTheme();
+  if (items === null) {
+    return (
+      <Text variant="small" tone="muted" align="center">
+        Checking what was saved…
+      </Text>
+    );
+  }
   if (items.length > 0) {
     return (
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          Saved {items.length} item{items.length === 1 ? '' : 's'}
-        </Text>
-        {items.map((item, idx) => (
-          <TouchableOpacity
-            key={item.id}
-            onPress={() => onOpenItem(item)}
-            style={[styles.itemRow, idx > 0 && styles.itemDivider]}
-            activeOpacity={0.8}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.itemName}>{item.rawName}</Text>
-              <Text style={styles.itemMeta}>
-                {formatQuantity(item.quantity, item.unit)}
-                {item.foodName && item.foodName.toLowerCase() !== item.rawName.toLowerCase() ? ` · ${item.foodName}` : ''}
-              </Text>
-            </View>
-            {item.status === 'resolved' ? (
-              <Text style={styles.itemKcal}>{formatNumber(item.nutrients.calories ?? 0)} kcal</Text>
-            ) : (
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingText}>{item.status === 'pending_food' ? 'Unknown food' : 'Unknown unit'}</Text>
+      <Card padding="none" testID="call-outcome">
+        <View style={{ padding: space.lg }}>
+          <Text variant="bodyStrong">
+            Saved {items.length} item{items.length === 1 ? '' : 's'}
+          </Text>
+        </View>
+        {items.map(item => (
+          <React.Fragment key={item.id}>
+            <Divider />
+            <Pressable
+              onPress={() => onOpenItem(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.rawName}`}
+              android_ripple={{ color: colors.ripple }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md + 2 }}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text variant="bodyStrong">{item.rawName}</Text>
+                <Text variant="small" tone="muted">
+                  {formatQuantity(item.quantity, item.unit)}
+                  {item.foodName && item.foodName.toLowerCase() !== item.rawName.toLowerCase() ? ` · ${item.foodName}` : ''}
+                </Text>
               </View>
-            )}
-          </TouchableOpacity>
+              {item.status === 'resolved' ? (
+                <Text variant="bodyStrong" tone="secondary" tabular>
+                  {formatNumber(item.nutrients.calories ?? 0)} kcal
+                </Text>
+              ) : (
+                <Badge label={item.status === 'pending_food' ? 'Unknown food' : 'Unknown unit'} tone="warning" />
+              )}
+            </Pressable>
+          </React.Fragment>
         ))}
-      </View>
+      </Card>
     );
   }
-  if (call?.status === 'no_list' || call?.status === 'failed') {
+  if (callRow?.status === 'no_list' || callRow?.status === 'failed') {
     return (
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>No food list was saved</Text>
-        <Text style={styles.cardBody}>You can add what you ate yourself.</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddItems', { date: call.localDate, callId: call.id })}
-        >
-          <Text style={styles.addButtonText}>Add items</Text>
-        </TouchableOpacity>
-      </View>
+      <Card>
+        <Text variant="bodyStrong">No food list was saved</Text>
+        <Text variant="small" tone="muted" style={{ marginTop: 2 }}>
+          You can add what you ate yourself.
+        </Text>
+        <View style={{ marginTop: space.lg }}>
+          <Button
+            label="Add items"
+            icon={Plus}
+            variant="soft"
+            size="sm"
+            style={{ alignSelf: 'flex-start' }}
+            onPress={() => navigation.navigate('AddItems', { date: callRow.localDate, callId: callRow.id })}
+          />
+        </View>
+      </Card>
     );
   }
-  return <Text style={styles.muted}>Waiting for the call summary…</Text>;
+  return (
+    <Text variant="small" tone="muted" align="center">
+      Waiting for the call summary…
+    </Text>
+  );
 }
-
-const C = tokens.call;
-
-const styles = StyleSheet.create({
-  muted: {
-    marginTop: 8,
-    textAlign: 'center',
-    fontSize: 13,
-    color: C.textMuted,
-  },
-  card: {
-    marginTop: 6,
-    backgroundColor: C.surfaceElevated,
-    borderColor: C.border,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.textPrimary,
-    marginBottom: 4,
-  },
-  cardBody: {
-    fontSize: 13,
-    color: C.textSecondary,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 10,
-  },
-  itemDivider: {
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-  },
-  itemName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.textPrimary,
-  },
-  itemMeta: {
-    marginTop: 2,
-    fontSize: 12,
-    color: C.textMuted,
-  },
-  itemKcal: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.textSecondary,
-  },
-  pendingBadge: {
-    backgroundColor: C.warningSurface,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  pendingText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: C.warning,
-  },
-  addButton: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-    backgroundColor: C.accept,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  addButtonText: {
-    color: C.onAccent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});

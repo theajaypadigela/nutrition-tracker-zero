@@ -131,6 +131,18 @@ npm run typecheck
 npm run lint
 ```
 
+### UI
+
+Light and dark themes follow the system setting. Every screen is assembled from one small design system:
+
+| Path | What |
+|---|---|
+| `src/theme/` | Colours (`palette.ts`), type scale (`typography.ts`), spacing and radii (`layout.ts`), and `ThemeProvider` / `useTheme` / `createStyles` |
+| `src/components/kit/` | The primitives: `Text`, `Button`, `Card`, `Field`, `Chip`, `Sheet`, `ListGroup`, `Notice`, `ProgressRing`… |
+| `src/components/layout/` | Screen frames: `TabScreen` (large title and profile button), `StackScreen` (header, footer action, keyboard handling) and the tab bar |
+
+Rules that keep it consistent: screens take colours from `useTheme()` and text styles from `Text` variants, never hex values or raw font sizes; colour means status (green on track, amber watch it, red a problem), not category; and `__tests__/palette.test.ts` fails if any text colour drops below WCAG AA contrast, or if the Android colour files (`res/values` and `res/values-night`, which paint the incoming-call screen and the window before React Native draws) drift from `palette.ts`. The in-app voice screen and the native ring screen follow the same light/dark setting as everything else. Inter (SIL Open Font License) is bundled for Android in `android/app/src/main/assets/fonts`; iOS uses the system font. The tab called **Pending** is the `Uncached` route.
+
 ### How the daily call works
 
 - **Arming.** A Notifee alarm (exact `SET_ALARM_CLOCK` when allowed) fires at the call time in the
@@ -195,7 +207,7 @@ What carries over:
 - Custom nutrient targets.
 
 What doesn't: the old nutrition values. They all came from Spoonacular, Groq or USDA, and the new app
-uses only values people enter. The imported history fills **Uncached** with your real foods, most-logged
+uses only values people enter. The imported history fills the **Pending** tab (the app's view of `/uncached`) with your real foods, most-logged
 first. Re-running the import is safe.
 
 ---

@@ -1,8 +1,9 @@
 import React from 'react';
 import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import BottomNavigation from '@/components/common/BottomNavigation';
+import { TabBar } from '@/components/layout/TabBar';
 import { useProfile } from '@/state/ProfileContext';
+import { useTheme } from '@/theme';
 import type { RootStackParamList, TabParamList } from './types';
 import ProfilesScreen from '@/screens/ProfilesScreen';
 import OnboardingScreen from '@/screens/OnboardingScreen';
@@ -23,17 +24,11 @@ import GoalsScreen from '@/screens/GoalsScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
-/** The old app's floating pill tab bar, driven by the tab navigator's state. */
-const CustomTabBar = ({ state, navigation }: BottomTabBarProps) => (
-  <BottomNavigation
-    activeTab={state.routes[state.index]?.name ?? ''}
-    onTabChange={tab => navigation.navigate(tab)}
-  />
-);
+const renderTabBar = (props: BottomTabBarProps) => <TabBar {...props} />;
 
 function MainTabs() {
   return (
-    <Tab.Navigator screenOptions={{ headerShown: false }} tabBar={CustomTabBar}>
+    <Tab.Navigator screenOptions={{ headerShown: false }} tabBar={renderTabBar}>
       <Tab.Screen name="Today" component={TodayScreen} />
       <Tab.Screen name="Uncached" component={UncachedScreen} />
       <Tab.Screen name="Foods" component={FoodsScreen} />
@@ -44,9 +39,10 @@ function MainTabs() {
 
 export default function RootNavigator() {
   const { profile, onboarding } = useProfile();
-  // Screens draw their own AppBar, as in the old app; only Reminder health keeps the stack header.
+  const { colors } = useTheme();
+  // Every screen draws its own header (see StackScreen / TabScreen), so the stack has none.
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
       {!profile ? (
         <Stack.Screen name="Profiles" component={ProfilesScreen} />
       ) : onboarding ? (
@@ -54,12 +50,16 @@ export default function RootNavigator() {
       ) : (
         <>
           <Stack.Screen name="Main" component={MainTabs} />
-          <Stack.Screen name="VoiceCall" component={VoiceCallScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+          <Stack.Screen
+            name="VoiceCall"
+            component={VoiceCallScreen}
+            options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+          />
           <Stack.Screen name="AddItems" component={AddItemsScreen} />
           <Stack.Screen name="FoodEditor" component={FoodEditorScreen} />
           <Stack.Screen name="FoodPicker" component={FoodPickerScreen} />
           <Stack.Screen name="UnitConversion" component={UnitConversionScreen} />
-          <Stack.Screen name="ReminderHealth" component={ReminderHealthScreen} options={{ headerShown: true, title: 'Reminder health' }} />
+          <Stack.Screen name="ReminderHealth" component={ReminderHealthScreen} />
           <Stack.Screen name="Goals" component={GoalsScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />

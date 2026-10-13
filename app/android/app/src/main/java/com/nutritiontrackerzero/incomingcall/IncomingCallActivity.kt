@@ -6,9 +6,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.TextView
 import com.nutritiontrackerzero.MainActivity
@@ -51,6 +53,7 @@ class IncomingCallActivity : Activity() {
     super.onCreate(savedInstanceState)
     applyLockscreenFlags()
     setContentView(R.layout.activity_incoming_call)
+    applyFonts(findViewById(android.R.id.content))
 
     bindPayload(intent)
 
@@ -72,6 +75,31 @@ class IncomingCallActivity : Activity() {
     super.onNewIntent(intent)
     setIntent(intent)
     bindPayload(intent)
+  }
+
+  /**
+   * Gives every TextView tagged "regular" / "medium" / "semibold" the matching bundled Inter file
+   * (the same assets the React Native UI uses). A missing asset leaves the system font.
+   */
+  private fun applyFonts(view: View) {
+    if (view is TextView) {
+      val file =
+        when (view.tag) {
+          "semibold" -> "Inter_600SemiBold"
+          "medium" -> "Inter_500Medium"
+          "regular" -> "Inter_400Regular"
+          else -> null
+        }
+      if (file != null) {
+        try {
+          view.typeface = Typeface.createFromAsset(assets, "fonts/$file.ttf")
+        } catch (_: Exception) {
+        }
+      }
+    }
+    if (view is ViewGroup) {
+      for (i in 0 until view.childCount) applyFonts(view.getChildAt(i))
+    }
   }
 
   private fun bindPayload(intent: Intent) {

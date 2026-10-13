@@ -24,6 +24,11 @@
     because the app holds MANAGE_OWN_CALLS (declared below). Required from Android 14 (API 34).
   -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+  <!--
+    The in-call foreground service below (Daily's) keeps the microphone alive when the screen locks
+    or the app is backgrounded mid-call. Required on Android 14+ for foregroundServiceType="microphone".
+  -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <!--
@@ -91,6 +96,18 @@
       android:name=".incomingcall.IncomingCallService"
       android:exported="false"
       android:foregroundServiceType="phoneCall" />
+
+    <!--
+      Daily's ongoing-call foreground service. Daily starts it when a call connects and stops it when
+      the call ends; without a declaration here Android logs "Unable to start service … not found" and
+      the call is not protected from being cut off in the background. Its README shows
+      "camera|microphone", but this app is audio-only and never asks for the camera, and Android 14+
+      refuses a camera-type service without that permission, so it is declared microphone-only.
+    -->
+    <service
+      android:name="com.daily.reactlibrary.DailyOngoingMeetingForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
 
     <!-- Handles Decline / Snooze actions on the call & missed notifications (works from background). -->
     <receiver

@@ -1,28 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Native incoming-call palette. Mirrors frontend/src/theme/callTheme.ts (callColors) so the
-  native ring screen and the JS in-call session stay in lockstep. If the call look changes,
-  update both this file and callTheme.ts.
+  Native colours, light theme. values-night/colors.xml holds the dark set, so everything here follows
+  the system light/dark setting just like the React Native UI does.
+
+  They are the app's palette (app/src/theme/palette.ts, lightPalette) under native names:
+  app_* paint what shows before the JS UI does; call_* paint the incoming-call screen. A test
+  (__tests__/palette.test.ts) fails if either file drifts from palette.ts.
 -->
 <resources>
-    <color name="call_background">#0A0A0A</color>
-    <color name="call_surface">#111111</color>
-    <color name="call_surface_elevated">#1A1A1A</color>
-    <color name="call_surface_avatar">#1E1E2E</color>
-    <color name="call_border">#222222</color>
+    <color name="app_background">#F6F6F3</color>
+    <color name="app_accent">#17734B</color>
+    <color name="ic_launcher_background">#17734B</color>
 
-    <color name="call_text_primary">#F3F3F3</color>
-    <color name="call_text_secondary">#C9C9C9</color>
-    <color name="call_text_muted">#8B8B92</color>
-    <color name="call_text_faint">#555555</color>
+    <color name="call_background">#F6F6F3</color>
+    <color name="call_surface">#FFFFFF</color>
+    <color name="call_avatar">#E5F1EA</color>
+    <color name="call_border">#E5E5DF</color>
 
-    <color name="call_brand">#7F77DD</color>
+    <color name="call_text_primary">#161615</color>
+    <color name="call_text_secondary">#45453F</color>
+    <color name="call_text_muted">#6D6D67</color>
 
-    <color name="call_accept">#1D9E75</color>
-    <color name="call_accept_surface">#0A2A1A</color>
-    <color name="call_decline">#E24B4A</color>
-    <color name="call_decline_surface">#2A0A0A</color>
-    <color name="call_presence">#1D9E75</color>
+    <color name="call_brand">#17734B</color>
+    <!-- The brand colour at 20% (the format is #AARRGGBB). -->
+    <color name="call_brand_ring">#3317734B</color>
 
-    <color name="call_on_accent">#FFFFFF</color>
+    <color name="call_accept">#17734B</color>
+    <color name="call_on_accept">#FFFFFF</color>
+    <color name="call_decline">#C6362C</color>
+    <color name="call_on_decline">#FFFFFF</color>
 </resources>

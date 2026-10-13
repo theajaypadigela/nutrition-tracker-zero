@@ -1,27 +1,34 @@
 import React, { useCallback, useMemo } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { BarChart3, ChevronRight, Target } from 'lucide-react-native';
+import { BarChart3, Target } from 'lucide-react-native';
 import { api } from '@/api/client';
-import AppBar from '@/components/common/AppBar';
-import { Notice } from '@/components/common/Feedback';
-import CaloriesSummaryCard from '@/components/nutrition-report/CaloriesSummaryCard';
-import MacroNutrientsSection from '@/components/nutrition-report/MacroNutrientsSection';
-import MicroNutrientsSection from '@/components/nutrition-report/MicroNutrientsSection';
+import { Card, FormGroup, ListGroup, ListRow, Notice, ProgressBar, SectionHeader, Text, type BadgeTone } from '@/components/kit';
+import { TabScreen } from '@/components/layout/TabScreen';
+import { WeekNutrientRow } from '@/components/report/WeekNutrientRow';
 import { deviceTimeZone } from '@/components/TimezoneField';
-import { Text } from '@/components/ui/text';
-import { VStack } from '@/components/ui/vstack';
 import { useAsync } from '@/hooks/useAsync';
 import { useMeta } from '@/state/MetaContext';
-import { tokens } from '@/theme/tokens';
+import { space } from '@/theme';
 import type { NutrientData } from '@/types/nutrition';
 import { addDays, localDateIn, weekStart } from '@/utils/dates';
+import { formatNumber } from '@/utils/format';
+import { weekRangeLabel } from '@/utils/nutrition';
 import { buildWeeklyNutrients, daysElapsed } from '@/utils/week';
 
+/** A limit (sugar, sodium) is good under its goal; a target (fiber) is good once it is met. */
+function microStatus(n: NutrientData, kind: 'limit' | 'target'): { label: string; tone: BadgeTone } {
+  if (!(n.goal > 0)) return { label: 'No goal', tone: 'neutral' };
+  const pct = n.current / n.goal;
+  if (kind === 'limit') {
+    return pct <= 1 ? { label: 'Good', tone: 'success' } : pct <= 1.15 ? { label: 'Moderate', tone: 'warning' } : { label: 'High', tone: 'danger' };
+  }
+  return pct >= 1 ? { label: 'Good', tone: 'success' } : pct >= 0.8 ? { label: 'Moderate', tone: 'warning' } : { label: 'Low', tone: 'warning' };
+}
+
 /**
- * This week so far vs goals, computed from D1 (no AI, PLAN.md §12) — the old Nutrition
- * Report layout without its AI-insights card. Other weeks and every nutrient live in the
- * weekly view.
+ * This week so far vs goals, computed from D1 (no AI, PLAN.md §12). Other weeks and every
+ * nutrient live in the weekly view.
  */
 export default function ReportScreen() {
   const navigation = useNavigation();
@@ -54,121 +61,128 @@ export default function ReportScreen() {
   const calories = pick('calories');
   const loggedDays = byKey.calories?.loggedDays ?? 0;
   const pending = range.data?.days.reduce((s, d) => s + d.pendingCount, 0) ?? 0;
+  const calRatio = calories.goal > 0 ? calories.current / calories.goal : 0;
+  const weekComplete = !!calories.weeklyGoal && calories.weeklyGoal === calories.goal;
+
+  const macros = [
+    { label: 'Protein', key: 'protein', kind: 'goal' as const },
+    { label: 'Carbs', key: 'carbs', kind: 'goal' as const },
+    { label: 'Fat', key: 'fat', kind: 'limit' as const },
+  ];
+  const others = [
+    { label: 'Fiber', key: 'fiber', kind: 'target' as const },
+    { label: 'Sugar', key: 'sugar', kind: 'limit' as const },
+    { label: 'Sodium', key: 'sodium', kind: 'limit' as const },
+  ];
 
   return (
-    <View className="flex-1">
-      <AppBar title="Nutrition Report" showProfileShortcut />
-      {!range.data && range.loading ? (
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color={tokens.report.spinner} />
-          <Text className="mt-4 text-gray-600">Loading nutrition data...</Text>
+    <TabScreen
+      title="Report"
+      subtitle={`This week · ${weekRangeLabel(start)}`}
+      refreshing={range.loading && !!range.data}
+      onRefresh={range.reload}
+    >
+      {range.error ? <Notice tone="danger">{range.error}</Notice> : null}
+
+      <Card padding="xl">
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text variant="small" tone="muted">
+            Calories this week
+          </Text>
+          <Text variant="small" tone="muted">
+            Day {elapsed} of 7
+          </Text>
         </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={range.loading && !!range.data} onRefresh={range.reload} />}
-        >
-          <VStack className="p-6 gap-6">
-            {range.error ? <Notice tone="error">{range.error}</Notice> : null}
-            <VStack className="gap-2">
-              <CaloriesSummaryCard
-                caloriesSoFar={calories.current}
-                proratedGoal={calories.goal}
-                weeklyGoal={calories.weeklyGoal ?? 0}
-                daysElapsed={elapsed}
-              />
-              <Text className="text-xs text-gray-500 px-1">
-                {loggedDays} of 7 days logged
-                {pending ? ` · ${pending} item${pending === 1 ? '' : 's'} still unknown, not counted` : ''}
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.xs, marginTop: space.sm }}>
+          <Text variant="display" tabular>
+            {formatNumber(calories.current)}
+          </Text>
+          <Text variant="body" tone="muted">
+            kcal
+          </Text>
+        </View>
+        <View style={{ marginTop: space.lg, gap: space.sm }}>
+          <ProgressBar value={calRatio} tone={calRatio > 1.1 ? 'warning' : 'primary'} height={8} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text variant="caption" tone="muted" tabular>
+              {Math.round(calRatio * 100)}% of {formatNumber(calories.goal)} kcal{weekComplete ? '' : ' so far'}
+            </Text>
+            {!weekComplete ? (
+              <Text variant="caption" tone="muted" tabular>
+                Weekly {formatNumber(calories.weeklyGoal ?? 0)} kcal
               </Text>
-            </VStack>
-            <MacroNutrientsSection
-              macroNutrients={{ protein: pick('protein'), carbs: pick('carbs'), fats: pick('fat') }}
-            />
-          </VStack>
+            ) : null}
+          </View>
+        </View>
+        <Text variant="caption" tone="muted" style={{ marginTop: space.lg }}>
+          {loggedDays} of 7 days logged
+        </Text>
+      </Card>
 
-          <MicroNutrientsSection
-            microNutrients={{ sugar: pick('sugar'), fiber: pick('fiber'), sodium: pick('sodium') }}
-          />
+      {pending > 0 ? (
+        <Notice
+          tone="warning"
+          action={{ label: 'Open Pending', onPress: () => navigation.navigate('Main', { screen: 'Uncached' }) }}
+        >
+          {pending} item{pending === 1 ? ' is' : 's are'} still unknown and not counted.
+        </Notice>
+      ) : null}
 
-          {/* Navigation card → All-nutrients weekly summary */}
-          <TouchableOpacity
+      <View style={{ gap: space.md }}>
+        <SectionHeader
+          title="Macros"
+          right={
+            <Text variant="small" tone="muted">
+              Week so far
+            </Text>
+          }
+        />
+        <ListGroup>
+          {macros.map(m => {
+            const n = pick(m.key);
+            return <WeekNutrientRow key={m.key} label={m.label} current={n.current} goal={n.goal} weeklyGoal={n.weeklyGoal} unit="g" kind={m.kind} />;
+          })}
+        </ListGroup>
+      </View>
+
+      <View style={{ gap: space.md }}>
+        <SectionHeader title="Other nutrients" />
+        <ListGroup>
+          {others.map(m => {
+            const n = pick(m.key);
+            const unit = meta.nutrients.find(x => x.key === m.key)?.unit ?? 'g';
+            return (
+              <WeekNutrientRow
+                key={m.key}
+                label={m.label}
+                current={n.current}
+                goal={n.goal}
+                weeklyGoal={n.weeklyGoal}
+                unit={unit}
+                kind={m.kind === 'target' ? 'goal' : 'limit'}
+                badge={microStatus(n, m.kind)}
+              />
+            );
+          })}
+        </ListGroup>
+      </View>
+
+      <FormGroup>
+        <ListGroup>
+          <ListRow
+            icon={BarChart3}
+            title="Weekly breakdown"
+            subtitle="Score, every nutrient, day-by-day chart"
             onPress={() => navigation.navigate('WeeklySummary')}
-            activeOpacity={0.85}
-            style={[styles.navCard, styles.navCardFirst]}
-          >
-            <View style={styles.navIconWrap}>
-              <BarChart3 size={20} color={tokens.report.primaryDeep} strokeWidth={2.2} />
-            </View>
-            <View style={styles.navTextCol}>
-              <Text style={styles.navTitle}>All nutrients · weekly view</Text>
-              <Text style={styles.navSub}>Score, search, day-by-day chart, custom goals</Text>
-            </View>
-            <ChevronRight size={20} color={tokens.report.primaryDeep} strokeWidth={2.2} />
-          </TouchableOpacity>
-
-          {/* Navigation card → daily goals */}
-          <TouchableOpacity onPress={() => navigation.navigate('Goals')} activeOpacity={0.85} style={styles.navCard}>
-            <View style={styles.navIconWrap}>
-              <Target size={20} color={tokens.report.primaryDeep} strokeWidth={2.2} />
-            </View>
-            <View style={styles.navTextCol}>
-              <Text style={styles.navTitle}>Daily goals</Text>
-              <Text style={styles.navSub}>Set the targets every report compares against</Text>
-            </View>
-            <ChevronRight size={20} color={tokens.report.primaryDeep} strokeWidth={2.2} />
-          </TouchableOpacity>
-
-          <View style={styles.listFooter} />
-        </ScrollView>
-      )}
-    </View>
+          />
+          <ListRow
+            icon={Target}
+            title="Daily goals"
+            subtitle="Set the targets every report compares against"
+            onPress={() => navigation.navigate('Goals')}
+          />
+        </ListGroup>
+      </FormGroup>
+    </TabScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  listFooter: {
-    height: 140,
-  },
-  navCardFirst: {
-    marginTop: 24,
-  },
-  navCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 24,
-    marginTop: 0,
-    marginBottom: 12,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: tokens.report.cardLine,
-    backgroundColor: tokens.report.cardBg,
-    gap: 14,
-  },
-  navIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: tokens.report.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: tokens.report.cardLine,
-  },
-  navTextCol: {
-    flex: 1,
-  },
-  navTitle: {
-    color: tokens.report.primaryDeep,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.1,
-  },
-  navSub: {
-    color: tokens.report.inkFaint,
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 3,
-  },
-});

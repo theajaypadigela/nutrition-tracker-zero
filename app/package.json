@@ -13,7 +13,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@daily-co/react-native-daily-js": "^0.83.0",
+    "@daily-co/react-native-daily-js": "^0.88.0",
     "@daily-co/react-native-webrtc": "^124.0.6-daily.1",
     "@expo/html-elements": "^0.12.5",
     "@gluestack-ui/core": "^3.0.12",

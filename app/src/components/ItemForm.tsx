@@ -1,24 +1,10 @@
 import React from 'react';
-import { ChevronDownIcon } from 'lucide-react-native';
+import { ScrollView, View } from 'react-native';
 import type { Meal } from '@/api/types';
+import { Chip, Field, Text } from '@/components/kit';
 import { useMeta } from '@/state/MetaContext';
+import { space } from '@/theme';
 import { capitalize } from '@/utils/format';
-import { Text } from './ui/text';
-import { VStack } from './ui/vstack';
-import { HStack } from './ui/hstack';
-import { Input, InputField } from './ui/input';
-import {
-  Select,
-  SelectItem,
-  SelectTrigger,
-  SelectInput,
-  SelectIcon,
-  SelectPortal,
-  SelectBackdrop,
-  SelectContent,
-  SelectDragIndicatorWrapper,
-  SelectDragIndicator,
-} from './ui/select';
 
 export interface ItemDraft {
   name: string;
@@ -35,14 +21,15 @@ export function draftErrors(d: ItemDraft): DraftErrors {
   const errors: DraftErrors = {};
   if (!d.name.trim()) errors.name = 'Enter what you ate';
   const q = Number(d.quantity);
-  if (!Number.isFinite(q) || q <= 0) errors.quantity = 'Quantity must be a positive number';
+  if (!Number.isFinite(q) || q <= 0) errors.quantity = 'Must be above 0';
   if (!d.unit?.trim()) errors.unit = 'Pick a unit';
   return errors;
 }
 
-const NO_MEAL = 'none';
-
-/** The old Manual Food Log form fields: meal select, food name, quantity + unit, custom unit. */
+/**
+ * One food to log: which meal, what, how much. The meal and the unit are each one tap on a chip;
+ * the unit is also a free text field for anything not in the list ("ladle", "handful").
+ */
 export default function ItemForm({
   draft,
   onChange,
@@ -53,114 +40,64 @@ export default function ItemForm({
   errors?: DraftErrors;
 }) {
   const meta = useMeta();
-  const listedUnit = draft.unit && meta.units.includes(draft.unit) ? draft.unit : undefined;
-  const fieldClass = (bad?: string) => `rounded-xl border-2 ${bad ? 'border-red-400' : 'border-gray-200'}`;
-
   return (
-    <VStack className="gap-5">
-      {/* Meal Type */}
-      <VStack className="gap-1">
-        <Text className="text-sm font-medium text-gray-700">Meal Type</Text>
-        <Select
-          selectedValue={draft.meal ?? undefined}
-          initialLabel={draft.meal ? capitalize(draft.meal) : undefined}
-          onValueChange={val => onChange({ ...draft, meal: val === NO_MEAL ? null : (val as Meal) })}
-        >
-          <SelectTrigger variant="outline" size="lg" className={fieldClass()}>
-            <SelectInput placeholder="Select meal type (optional)" className="flex-1" />
-            <SelectIcon className="mr-3" as={ChevronDownIcon} />
-          </SelectTrigger>
-          <SelectPortal>
-            <SelectBackdrop />
-            <SelectContent>
-              <SelectDragIndicatorWrapper>
-                <SelectDragIndicator />
-              </SelectDragIndicatorWrapper>
-              {meta.meals.map(meal => (
-                <SelectItem key={meal} label={capitalize(meal)} value={meal} />
-              ))}
-              <SelectItem label="No meal" value={NO_MEAL} />
-            </SelectContent>
-          </SelectPortal>
-        </Select>
-      </VStack>
-
-      {/* Food Name */}
-      <VStack className="gap-1">
-        <Text className="text-sm font-medium text-gray-700">
-          Food Name <Text className="text-red-500">*</Text>
+    <View style={{ gap: space.lg }}>
+      <View style={{ gap: space.sm }}>
+        <Text variant="smallStrong" tone="secondary">
+          Meal
         </Text>
-        <Input variant="outline" size="lg" className={fieldClass(errors.name)}>
-          <InputField
-            value={draft.name}
-            onChangeText={name => onChange({ ...draft, name })}
-            placeholder="e.g. idli"
-            autoCapitalize="none"
-          />
-        </Input>
-        {errors.name ? <Text className="text-xs text-red-500 mt-0.5">{errors.name}</Text> : null}
-      </VStack>
-
-      {/* Quantity & Unit row */}
-      <HStack className="gap-3">
-        <VStack className="flex-1 gap-1">
-          <Text className="text-sm font-medium text-gray-700">
-            Quantity <Text className="text-red-500">*</Text>
-          </Text>
-          <Input variant="outline" size="lg" className={fieldClass(errors.quantity)}>
-            <InputField
-              value={draft.quantity}
-              onChangeText={quantity => onChange({ ...draft, quantity })}
-              placeholder="e.g. 2"
-              keyboardType="decimal-pad"
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+          {meta.meals.map(m => (
+            <Chip
+              key={m}
+              label={capitalize(m)}
+              selected={draft.meal === m}
+              onPress={() => onChange({ ...draft, meal: draft.meal === m ? null : m })}
             />
-          </Input>
-        </VStack>
+          ))}
+        </View>
+      </View>
 
-        <VStack className="flex-1 gap-1">
-          <Text className="text-sm font-medium text-gray-700">
-            Unit <Text className="text-red-500">*</Text>
-          </Text>
-          {/* Keyed by value: typing a unit below must not leave an older pick showing here. */}
-          <Select
-            key={listedUnit ?? 'custom'}
-            selectedValue={listedUnit}
-            initialLabel={listedUnit}
-            onValueChange={unit => onChange({ ...draft, unit })}
-          >
-            <SelectTrigger variant="outline" size="lg" className={fieldClass(errors.unit)}>
-              <SelectInput placeholder="Unit" className="flex-1" />
-              <SelectIcon className="mr-3" as={ChevronDownIcon} />
-            </SelectTrigger>
-            <SelectPortal>
-              <SelectBackdrop />
-              <SelectContent>
-                <SelectDragIndicatorWrapper>
-                  <SelectDragIndicator />
-                </SelectDragIndicatorWrapper>
-                {meta.units.map(u => (
-                  <SelectItem key={u} label={u} value={u} />
-                ))}
-              </SelectContent>
-            </SelectPortal>
-          </Select>
-        </VStack>
-      </HStack>
-      {errors.quantity ? <Text className="text-xs text-red-500 -mt-4">{errors.quantity}</Text> : null}
-      {errors.unit ? <Text className="text-xs text-red-500 -mt-4">{errors.unit}</Text> : null}
+      <Field
+        label="Food"
+        required
+        value={draft.name}
+        onChangeText={name => onChange({ ...draft, name })}
+        placeholder="e.g. idli"
+        autoCapitalize="none"
+        error={errors.name}
+      />
 
-      {/* Custom unit input if unit not in list */}
-      <VStack className="gap-1">
-        <Text className="text-sm text-gray-500">Or type a custom unit:</Text>
-        <Input variant="outline" size="md" className="rounded-xl border-2 border-gray-200">
-          <InputField
+      <View style={{ flexDirection: 'row', gap: space.md }}>
+        <View style={{ flex: 1 }}>
+          <Field
+            label="Quantity"
+            required
+            value={draft.quantity}
+            onChangeText={quantity => onChange({ ...draft, quantity })}
+            placeholder="1"
+            keyboardType="decimal-pad"
+            error={errors.quantity}
+          />
+        </View>
+        <View style={{ flex: 1.3 }}>
+          <Field
+            label="Unit"
+            required
             value={draft.unit ?? ''}
             onChangeText={unit => onChange({ ...draft, unit })}
-            placeholder="e.g. ladle, handful"
+            placeholder="piece, bowl, cup…"
             autoCapitalize="none"
+            error={errors.unit}
           />
-        </Input>
-      </VStack>
-    </VStack>
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginHorizontal: -space.lg }} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm }}>
+        {meta.units.map(u => (
+          <Chip key={u} label={u} selected={draft.unit?.trim() === u} onPress={() => onChange({ ...draft, unit: u })} />
+        ))}
+      </ScrollView>
+    </View>
   );
 }
