@@ -325,6 +325,10 @@ export interface TargetInfo {
   scored: boolean;
   verdicts: boolean;
   origin: 'recommended' | 'custom' | 'care_team';
+  /** A typed target: the recommended value it replaces. */
+  recommended?: number;
+  /** A typed target away from the usual values: why. */
+  warning?: string;
 }
 
 export interface TargetSetInfo {
@@ -437,6 +441,17 @@ export interface GoalDetail extends Goal {
   evidence?: Evidence;
   setAt?: string | null;
   outsideBounds?: boolean;
+  /** Why the typed number is away from the usual values. It is saved anyway: the number is the person's choice. */
+  warning?: string;
+  /** The usual values for a typed number, and what to say outside them (plan 6.4). Missing when there are none. */
+  bounds?: GoalBounds;
+}
+
+export interface GoalBounds {
+  low?: number;
+  high?: number;
+  below?: string;
+  above?: string;
 }
 
 export interface GoalsResponseV2 extends GoalsResponse {

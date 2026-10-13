@@ -1,11 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, ScrollView, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  ScrollView,
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { Mic, Phone, PhoneOff, RotateCw } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, EmptyState, LEAF_PATH, Text } from '@/components/kit';
 import type { TranscriptLine } from '@/hooks/useVapiCall';
+import type { AudioRoute, CallAudioState } from '@/services/calls/audioRoute';
 import { createStyles, FocusAwareStatusBar, hairline, radius, size, space, useTheme } from '@/theme';
+import { AudioRouteControl } from './AudioRouteControl';
 
 export type CallStatus = 'idle' | 'requesting' | 'active' | 'processing' | 'completed' | 'error';
 
@@ -23,7 +34,15 @@ type VoiceSessionScreenProps = {
   doneButtonText: string;
   /** What the call saved, shown under the transcript once the call is over. */
   outcome?: React.ReactNode;
+  /** Where the call plays and what else it can play through, while it is live. */
+  audio?: CallAudioState | null;
+  onSelectAudioRoute?: (route: AudioRoute) => void;
+  /** The phone is at the ear on the earpiece: cover the screen and swallow touches (a cheek must not end the call). */
+  shielded?: boolean;
 };
+
+/** The cover while the phone is at the ear. Black whatever the theme: it stands for a screen that is off. */
+const SCREEN_OFF = '#000000';
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
@@ -157,6 +176,9 @@ export default function VoiceSessionScreen({
   processingText,
   doneButtonText,
   outcome,
+  audio,
+  onSelectAudioRoute,
+  shielded,
 }: VoiceSessionScreenProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -257,6 +279,8 @@ export default function VoiceSessionScreen({
       ) : null}
 
       <View style={[styles.controls, { paddingBottom: Math.max(insets.bottom, space.md) + space.xs }]}>
+        {isActive && audio && onSelectAudioRoute ? <AudioRouteControl state={audio} onSelect={onSelectAudioRoute} /> : null}
+
         {/* No second call from here once one has ended: Done closes the screen. */}
         {!isCompleted && !isError ? (
           <Button
@@ -278,6 +302,16 @@ export default function VoiceSessionScreen({
           <Button label={doneButtonText} variant={isCompleted ? 'primary' : 'secondary'} size="lg" fullWidth onPress={onDonePress} />
         ) : null}
       </View>
+
+      {shielded ? (
+        <View
+          testID="proximity-shield"
+          style={[StyleSheet.absoluteFill, { backgroundColor: SCREEN_OFF }]}
+          onStartShouldSetResponder={() => true}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
     </View>
   );
 }

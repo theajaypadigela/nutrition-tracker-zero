@@ -2,7 +2,7 @@ import { badRequest, conflict, json, nowIso, readJson } from '../http';
 import { callJson, staleSweepStatement, type CallRow, type UserRow } from '../db/queries';
 import { goalRejection, goalWarnings } from '../domain/goals';
 import { NUTRIENTS, isNutrientKey, type NutrientKey } from '../domain/nutrients';
-import { checkOverride } from '../domain/targets/overrides';
+import { checkOverride, overrideBounds } from '../domain/targets/overrides';
 import { CALL_TIME_RE, isValidTimeZone, localDateIn } from '../domain/time';
 import { requireProfileSecret } from '../auth';
 import { goalStateFromResults, goalStatements, goalsView, type GoalRow } from '../health';
@@ -42,23 +42,30 @@ export function customKeys(rows: { nutrient: string }[]): NutrientKey[] {
   return rows.map((r) => r.nutrient).filter(isNutrientKey);
 }
 
-/** A typed number outside the usual bounds is kept and labelled, never silently changed (plan 6.4). */
-function outsideBounds(row: GoalRow, view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>): boolean {
-  if (!isNutrientKey(row.nutrient) || row.origin === 'care_team') return false;
-  const set = state.sets.length ? state.sets[state.sets.length - 1]! : null;
-  const check = checkOverride({ nutrient: row.nutrient, value: row.target, set: view.mode === 'personalised' ? set : null, sex: set?.inputs?.sexForCalc ?? null });
-  // The wall and ceiling for calories hold with or without a profile.
-  return !check.ok || goalRejection(row.nutrient, row.target) !== null;
+/** What a typed number is checked against: the personal set in force, or none (the calorie placeholders only). */
+function boundsContext(view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>) {
+  const set = view.mode === 'personalised' && state.sets.length ? state.sets[state.sets.length - 1]! : null;
+  return { set, sex: set?.inputs?.sexForCalc ?? null };
+}
+
+/** A typed number away from the usual values is kept as typed and labelled with why, never refused or changed (plan 6.4). */
+function warningOf(row: GoalRow, view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>): string | null {
+  if (!isNutrientKey(row.nutrient) || row.origin === 'care_team') return null;
+  return checkOverride({ nutrient: row.nutrient, value: row.target, ...boundsContext(view, state) }).note ?? null;
 }
 
 function goalsJson(rows: GoalRow[], view: ReturnType<typeof goalsView>, state: ReturnType<typeof goalStateFromResults>) {
   const typed = new Map(rows.map((r) => [r.nutrient, r]));
+  const context = boundsContext(view, state);
   return {
     mode: view.mode,
     hidden: view.hidden,
     goals: NUTRIENTS.map((n) => {
       const row = typed.get(n.key);
       const rec = view.recommended[n.key];
+      // A care-team number is used as typed: it is never measured against the usual values (6.7).
+      const bounds = view.mode === 'reference_only' || view.hidden ? {} : overrideBounds({ nutrient: n.key, ...context });
+      const warning = row ? warningOf(row, view, state) : null;
       return {
         key: n.key,
         label: n.label,
@@ -70,7 +77,8 @@ function goalsJson(rows: GoalRow[], view: ReturnType<typeof goalsView>, state: R
         origin: view.origins[n.key] ?? null,
         recommended: rec?.value ?? null,
         ...(rec ? { how: rec.how, basis: rec.basis, evidence: rec.evidence } : {}),
-        ...(row ? { setAt: row.updated_at ?? null, outsideBounds: outsideBounds(row, view, state) } : {}),
+        ...(bounds.low !== undefined || bounds.high !== undefined ? { bounds } : {}),
+        ...(row ? { setAt: row.updated_at ?? null, outsideBounds: warning !== null, ...(warning ? { warning } : {}) } : {}),
       };
     }),
     warnings: goalWarnings(rows),
@@ -138,11 +146,11 @@ export function registerSettings(router: Router) {
   router.add('GET', '/me/goals', 'user', async ({ env, user, unlocked }: Ctx) => json(await readGoals(env, user!.id, user!.timezone, unlocked)));
 
   /**
-   * Typed numbers, kept as overrides of the recommended value. With the profile's secret the bounds are the
-   * plan's (6.4): energy between the sex-specific floor and 125% of the estimate, protein between the allowance
-   * and the highest typical figure, sodium no higher than the 2,300 mg reduction level, a micronutrient up to its
-   * food-sourced upper level. Without it, only the wall and ceiling for calories apply. `origin: 'care_team'`
-   * is for a reference-only profile typing the numbers its doctor gave it (6.7).
+   * Typed numbers, kept as overrides of the recommended value. Any positive number is saved: it is the person's choice.
+   * A number away from the usual values (plan 6.4: energy between the sex-specific floor and 125% of the estimate,
+   * protein between the allowance and the highest typical figure, sodium between 1,500 and 2,300 mg, a micronutrient
+   * up to its food-sourced upper level; without the secret, calories between 1,200 and 6,000) comes back with a note
+   * saying why it is unusual. `origin: 'care_team'` is for a reference-only profile typing the numbers its doctor gave it (6.7).
    */
   router.add('PUT', '/me/goals', 'user', async ({ req, env, user, unlocked }: Ctx) => {
     // A profile with a secret changes its numbers only with it: the personal bounds need the target set, and a care-team number is
@@ -159,7 +167,7 @@ export function registerSettings(router: Router) {
     if (origin === 'care_team' && view.mode !== 'reference_only') {
       throw badRequest('Care-team numbers are for profiles without personal targets. Use your own targets instead.', { field: 'origin' });
     }
-    const set = before.sets.length ? before.sets[before.sets.length - 1]! : null;
+    const context = boundsContext(view, before);
 
     const upserts: { nutrient: string; target: number }[] = [];
     const resets: string[] = [];
@@ -171,11 +179,11 @@ export function registerSettings(router: Router) {
         continue;
       }
       if (typeof value !== 'number') throw badRequest(`${key} goal must be a positive number`);
-      // The Phase 0 wall and ceiling hold for everyone; care-team numbers get only a typo guard (6.7).
+      // Only a number that cannot be a target is refused; care-team numbers also get a typo guard (6.7).
       const rejection = origin === 'care_team' ? careTeamRejection(key, value) : goalRejection(key, value);
       if (rejection) throw badRequest(rejection, { field: key });
-      if (origin === 'custom' && view.mode === 'personalised') {
-        const check = checkOverride({ nutrient: key, value, set, sex: set?.inputs?.sexForCalc ?? null });
+      if (origin === 'custom') {
+        const check = checkOverride({ nutrient: key, value, ...context });
         if (!check.ok) throw badRequest(check.message!, { field: key });
         if (check.note) notes.push({ nutrient: key, note: check.note });
       }

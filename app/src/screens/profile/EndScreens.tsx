@@ -5,6 +5,7 @@ import { Ban, UserRoundX } from 'lucide-react-native';
 import { Button, Icon, Notice, Text } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import { strings } from '@/i18n/strings';
+import { leaveHealthFlow } from '@/navigation/healthFlow';
 import { useHealthDraft } from '@/state/HealthDraft';
 import { space } from '@/theme';
 
@@ -15,7 +16,7 @@ export function Under19Screen() {
   const t = strings.health.under19;
   const done = () => {
     reset();
-    navigation.navigate('Main');
+    leaveHealthFlow(navigation);
   };
   return (
     <StackScreen
@@ -33,14 +34,16 @@ export function Under19Screen() {
   );
 }
 
-/** After a safety answer or a gate puts the profile in reference-only mode: what that means, and the care-team path (plan 6.7). */
+/**
+ * After a safety answer or a gate puts the profile in reference-only mode: what that means, and the care-team path (plan 6.7).
+ * The flow is already off the stack (see ReviewScreen), so Back and Done return to where it was opened.
+ */
 export function ReferenceOnlyScreen() {
   const navigation = useNavigation();
   const t = strings.health.referenceOnly;
   return (
     <StackScreen
       title={t.title}
-      onBack={() => navigation.navigate('Main')}
       footer={
         <>
           <Button
@@ -51,7 +54,7 @@ export function ReferenceOnlyScreen() {
             fullWidth
             onPress={() => navigation.navigate('Goals', { careTeam: true })}
           />
-          <Button testID="ref-done" label={t.done} size="lg" fullWidth onPress={() => navigation.navigate('Main')} />
+          <Button testID="ref-done" label={t.done} size="lg" fullWidth onPress={() => navigation.goBack()} />
         </>
       }
     >

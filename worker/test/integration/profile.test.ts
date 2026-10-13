@@ -474,33 +474,57 @@ describe('goals: recommended and typed side by side, inside their bounds (plan 6
     expect((await api('GET', '/days/2026-10-05', { userId, secret })).body).toMatchObject({ goals: { calories: 2150, protein: 80 }, customGoals: ['protein'] });
   });
 
-  it('refuses a calorie target under the sex-specific floor or over 125% of the estimate', async () => {
+  it('saves a calorie target under the sex-specific floor or over 125% of the estimate, with a warning', async () => {
     const { userId, secret } = await onboard();
     const put = (goals: Record<string, number | null>) => api('PUT', '/me/goals', { userId, secret, body: { goals } });
     const low = await put({ calories: 1100 });
-    expect(low.status).toBe(400);
-    expect(low.body.error.message).toBe('Targets under 1,200 kcal need a doctor or dietitian');
-    expect((await put({ calories: 799 })).status).toBe(400);
-    expect((await put({ calories: 2700 })).status).toBe(400); // 125% of 2,150 is 2,690
-    expect((await put({ calories: 2690 })).status).toBe(200);
-    expect((await put({ calories: 1200 })).status).toBe(200);
+    expect(low.status).toBe(200);
+    expect(low.body.notes).toEqual([{ nutrient: 'calories', note: expect.stringMatching(/^Under 1,200 kcal .*doctor or dietitian/) }]);
+    const calories = low.body.goals.find((g: any) => g.key === 'calories');
+    expect(calories).toMatchObject({ target: 1100, custom: true, recommended: 2150, outsideBounds: true, warning: expect.stringMatching(/^Under 1,200 kcal/) });
+    expect(calories.bounds).toMatchObject({ low: 1200, high: 2690 }); // 125% of 2,150, to the nearest 10
+    expect((await put({ calories: 799 })).status).toBe(200);
+    const high = await put({ calories: 2700 });
+    expect(high.status).toBe(200);
+    expect(high.body.notes[0].note).toMatch(/more than 125% of your estimated needs/);
+    const fine = await put({ calories: 2690 });
+    expect(fine.body.notes).toEqual([]);
+    expect(fine.body.goals.find((g: any) => g.key === 'calories')).toMatchObject({ target: 2690, outsideBounds: false });
+    expect(fine.body.goals.find((g: any) => g.key === 'calories').warning).toBeUndefined();
+    expect((await put({ calories: 1200 })).body.notes).toEqual([]);
+    // Only a number that cannot be a target is refused.
+    expect((await put({ calories: 0 })).status).toBe(400);
   });
 
-  it('bounds protein, sodium and the micronutrients, and says why', async () => {
+  it('saves protein, sodium and micronutrient targets away from the usual values, and says why', async () => {
     const { userId, secret } = await onboard();
     const put = (goals: Record<string, number | null>) => api('PUT', '/me/goals', { userId, secret, body: { goals } });
-    expect((await put({ protein: 40 })).status).toBe(400); // under the allowance of 0.8 g per kg (48 g)
-    const high = await put({ protein: 150 });
-    expect(high.status).toBe(200);
-    expect(high.body.notes[0].note).toMatch(/No authority sets an upper limit/);
-    expect((await put({ sodium: 2500 })).status).toBe(400);
-    const low = await put({ sodium: 1200 });
-    expect(low.status).toBe(200);
-    expect(low.body.notes[0].note).toMatch(/under 1,500 mg/);
-    expect((await put({ calcium: 3000 })).status).toBe(400); // over the upper level of 2,500
-    expect((await put({ calcium: 1200 })).status).toBe(200);
-    expect((await put({ fat: 400 })).status).toBe(400); // more energy than the target
-    expect((await put({ fiber: 45 })).status).toBe(200);
+    const note = async (goals: Record<string, number | null>) => {
+      const res = await put(goals);
+      expect(res.status).toBe(200);
+      return res.body.notes[0]?.note as string | undefined;
+    };
+    expect(await note({ protein: 40 })).toMatch(/below the recommended allowance of 0\.8 g per kg/); // the allowance is 48 g
+    expect(await note({ protein: 150 })).toMatch(/No authority sets an upper limit/);
+    expect(await note({ protein: 90 })).toBeUndefined();
+    expect(await note({ sodium: 2500 })).toMatch(/past the level where cutting back/);
+    expect(await note({ sodium: 1200 })).toMatch(/under 1,500 mg/);
+    expect(await note({ calcium: 3000 })).toMatch(/upper level of 2,500 mg/);
+    expect(await note({ calcium: 1200 })).toBeUndefined();
+    expect(await note({ fat: 400 })).toMatch(/Over the usual range/);
+    expect(await note({ fiber: 45 })).toBeUndefined();
+    // Every number above was saved as typed.
+    const by = Object.fromEntries((await api('GET', '/me/goals', { userId, secret })).body.goals.map((g: any) => [g.key, g]));
+    expect(by.protein).toMatchObject({ target: 90, custom: true, outsideBounds: false, bounds: { low: 48, high: 120 } });
+    expect(by.sodium).toMatchObject({ target: 1200, custom: true, outsideBounds: true, bounds: { low: 1500, high: 2300 } });
+    expect(by.fat).toMatchObject({ target: 400, custom: true, outsideBounds: true });
+    // The targets screen shows the recommended value next to the typed one, with the warning.
+    const targets = await api('GET', '/me/targets', { userId, secret });
+    const sodium = targets.body.targets.find((t: any) => t.nutrient === 'sodium');
+    expect(sodium).toMatchObject({ value: 1200, origin: 'custom', recommended: 2300, warning: expect.stringMatching(/under 1,500 mg/) });
+    const protein = targets.body.targets.find((t: any) => t.nutrient === 'protein');
+    expect(protein).toMatchObject({ value: 90, origin: 'custom', recommended: 60 });
+    expect(protein.warning).toBeUndefined();
   });
 
   it('keeps a value saved outside the bounds, labels it, and resets with null', async () => {
@@ -508,7 +532,7 @@ describe('goals: recommended and typed side by side, inside their bounds (plan 6
     await env.DB.prepare(`INSERT INTO user_goals (user_id, nutrient, target) VALUES (?, 'calories', 1000)`).bind(userId).run();
     const res = await api('GET', '/me/goals', { userId, secret });
     const calories = res.body.goals.find((g: any) => g.key === 'calories');
-    expect(calories).toMatchObject({ target: 1000, custom: true, outsideBounds: true });
+    expect(calories).toMatchObject({ target: 1000, custom: true, outsideBounds: true, warning: expect.stringMatching(/^Under 1,200 kcal/) });
     expect(res.body.warnings).toEqual([{ nutrient: 'calories', id: 'below_floor', floor: 1200 }]);
     const reset = await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: null } } });
     expect(reset.body.goals.find((g: any) => g.key === 'calories')).toMatchObject({ target: 2150, custom: false });

@@ -7,8 +7,10 @@ import { Alert } from 'react-native';
 import TestRenderer, { act, type ReactTestInstance } from 'react-test-renderer';
 
 jest.mock('@react-navigation/native', () => {
-  const nav = { navigate: jest.fn(), goBack: jest.fn(), canGoBack: jest.fn(() => true), replace: jest.fn() };
-  return { useNavigation: () => nav, useIsFocused: () => true, useRoute: () => ({ params: {} }), useFocusEffect: jest.fn(), __nav: nav };
+  const nav = { navigate: jest.fn(), goBack: jest.fn(), canGoBack: jest.fn(() => true), replace: jest.fn(), dispatch: jest.fn() };
+  // As React Navigation builds it.
+  const CommonActions = { reset: (state: object) => ({ type: 'RESET', payload: state }) };
+  return { useNavigation: () => nav, useIsFocused: () => true, useRoute: () => ({ params: {} }), useFocusEffect: jest.fn(), CommonActions, __nav: nav };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@/api/client', () => {
@@ -47,6 +49,19 @@ import { ThemeProvider } from '@/theme';
 
 const nav = (jest.requireMock('@react-navigation/native') as { __nav: Record<string, jest.Mock> }).__nav;
 const api_ = api as unknown as Record<string, jest.Mock>;
+
+/**
+ * The screens left in the stack after the last `dispatch` (a reset that takes the flow off the stack), for a stack of
+ * `names` from the bottom up.
+ */
+const stackAfter = (names: string[]) => {
+  const update = nav.dispatch!.mock.calls.at(-1)![0] as (state: object) => { payload: { routes: { name: string }[]; index: number } };
+  const routes = names.map((name, i) => ({ name, key: `${name}-${i}` }));
+  const action = update({ type: 'stack', key: 'root', stale: false, index: routes.length - 1, routeNames: names, routes });
+  expect(action.payload.index).toBe(action.payload.routes.length - 1);
+  return action.payload.routes.map(r => r.name);
+};
+const FLOW = ['HealthIntro', 'SafetyCheck', 'AboutYou', 'Activity', 'HealthGoal', 'Pattern', 'HealthReview'];
 
 /** The draft, as the screens leave it, readable from the test. */
 let current!: ReturnType<typeof useHealthDraft>;
@@ -223,7 +238,9 @@ describe('the end screens', () => {
     const tree = await render(<Under19Screen />, { ...ADULT });
     expect(texts(tree).some(t => /for adults 19 and over/.test(t))).toBe(true);
     await press(tree, 'under19-done');
-    expect(nav.navigate).toHaveBeenCalledWith('Main');
+    // Back to where the flow was opened, with none of its steps left to walk back through.
+    expect(nav.navigate).not.toHaveBeenCalledWith('Main');
+    expect(stackAfter(['Main', 'Settings', 'HealthIntro', 'SafetyCheck', 'AboutYou', 'Under19'])).toEqual(['Main', 'Settings']);
     expect(current.draft).toEqual(EMPTY_DRAFT);
   });
 });
@@ -411,7 +428,7 @@ describe('step 6: the review, and Save (plan 3.5, 8.1)', () => {
     // No body field is sent: there is none to send.
     expect(Object.keys(body.profile).sort()).toEqual(['goal', 'pace', 'pattern', 'referenceSet']);
     expect(apply).toHaveBeenCalledWith(response);
-    expect(nav.navigate).toHaveBeenCalledWith('ReferenceOnly');
+    expect(stackAfter(['Main', 'Settings', 'HealthIntro', 'SafetyCheck', 'HealthReview'])).toEqual(['Main', 'Settings', 'ReferenceOnly']);
   });
 
   it('an eating-disorder answer shows the hide-numbers switch already on', async () => {
@@ -441,7 +458,12 @@ describe('step 6: the review, and Save (plan 3.5, 8.1)', () => {
     const body = api_.saveHealthProfile!.mock.calls[0]![0];
     expect(body.profile).toMatchObject({ sexForCalc: 'female', heightCm: 165, weightKg: 62, activity: 'low_active', goal: 'general_health' });
     expect(apply).toHaveBeenCalledWith(saved);
-    expect(nav.navigate).toHaveBeenCalledWith('Targets');
+    // Saving shows the targets, and Back from them goes to where the flow was opened: the steps are off the stack.
+    expect(nav.navigate).not.toHaveBeenCalled();
+    expect(stackAfter(['Main', 'Settings', ...FLOW])).toEqual(['Main', 'Settings', 'Targets']);
+    // Opened from the targets screen: back to that one, not a second copy on top.
+    expect(stackAfter(['Main', 'Targets', ...FLOW])).toEqual(['Main', 'Targets']);
+    expect(stackAfter(['Main', ...FLOW])).toEqual(['Main', 'Targets']);
   });
 
   it('opens the explanation in the words of the set chosen: the India set says 2,000 mg and the average requirement', async () => {

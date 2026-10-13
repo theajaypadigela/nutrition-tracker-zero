@@ -939,17 +939,19 @@ Goals never change a micronutrient or a limit. They change energy, protein and t
 
 ### 6.4 Overrides and their bounds
 
-A custom value is accepted if it is inside the bounds below; outside them the app says why in plain words. The bounds protect people from the failure in P4 (any positive number accepted). They are **[A]**, tied to the standards named. A value saved *before* this change stays in force and is labelled "outside the usual bounds" rather than being silently changed.
+A custom value is the person's choice: any positive number is saved (2026-10-13: the bounds below used to refuse values, and now only warn). Outside the bounds below, the app says why in plain words, while the number is typed and next to the saved target, and the recommended value stays in view. The bounds address the failure in P4 (any positive number accepted *silently*). They are **[A]**, tied to the standards named. A saved value outside them is labelled "outside the usual bounds", never changed.
 
-| Target | Lowest allowed | Highest allowed | Outside the bounds |
+| Target | Usual low | Usual high | Outside the bounds (saved in every case) |
 |---|---|---|---|
-| Energy (personalised mode) | The sex-specific floor: 1,200 kcal (female), 1,500 (male), 1,350 (average) [G] | 125% of the maintenance estimate, to the nearest 10 kcal [A]. If the person is very active, the answer is a higher activity category, not a higher override | Rejected, with the reason; below the floor the message is "Targets under {floor} kcal need a doctor or dietitian" |
-| Protein | The Recommended Dietary Allowance for the reference weight (0.8 g/kg) [R] | The smaller of 2.0 g/kg of reference weight and 35% of the energy target [G, R] | Rejected below. Above: accepted with a note ("no authority sets an upper limit for healthy adults; 2.0 g/kg is the highest figure guidelines treat as typical; with kidney disease talk to your care team first") |
-| Fat, carbohydrate | Any positive number whose energy does not exceed the energy target | same | Accepted, labelled Custom, and the range check against the 20-35% and 45-65% shares is shown as information |
-| Fibre | None | None | Accepted |
-| Total sugars | None (no authority limits total sugars, 1.3) | None | Accepted as a personal limit, labelled Custom |
-| Sodium limit | 1,500 mg, the Adequate Intake [R] | 2,300 mg, the reduction level [R] | Below 1,500: accepted with a note (a limit under the adequacy level asks for less than the body usually needs). Above 2,300: rejected |
-| A vitamin or mineral | 50% of the recommended value | The Tolerable Upper Intake Level where it covers food-sourced intake (calcium, iron, zinc, vitamin C, vitamin D), otherwise 300% of the recommended value [R / A] | Warned below; rejected above |
+| Energy (personalised mode) | The sex-specific floor: 1,200 kcal (female), 1,500 (male), 1,350 (average) [G] | 125% of the maintenance estimate, to the nearest 10 kcal [A]. If the person is very active, the better answer is a higher activity category | A warning with the reason; below the floor it says a doctor or dietitian can help set a target that low. Without personal targets the placeholders are 1,200 and 6,000 kcal |
+| Protein | The Recommended Dietary Allowance for the reference weight (0.8 g/kg) [R] | 2.0 g/kg of reference weight [G] | Below: a warning. Above: a note ("no authority sets an upper limit for healthy adults; 2.0 g/kg is the highest figure guidelines treat as typical; with kidney disease talk to your care team first") |
+| Fat, carbohydrate | The low edge of the usual share of energy (20-35% and 45-65%) | The high edge | A warning naming the usual range in grams |
+| Fibre | 50% of the recommended value | 300% of it | A warning |
+| Total sugars | None (no authority limits total sugars, 1.3) | None | Saved as a personal limit, labelled Custom |
+| Sodium limit | 1,500 mg, the Adequate Intake [R] | 2,300 mg, the reduction level [R] | Below 1,500: a note (a limit under the adequacy level asks for less than the body usually needs). Above 2,300: a warning |
+| A vitamin or mineral | 50% of the recommended value | The Tolerable Upper Intake Level where it covers food-sourced intake (calcium, iron, zinc, vitamin C, vitamin D), otherwise 300% of the recommended value [R / A] | A warning |
+
+Only a number that cannot be a target (not a number, zero or less, over 100,000) is refused. Care-team numbers (6.7) keep their typo guard.
 
 ### 6.5 Pace and target weight
 
@@ -1432,7 +1434,7 @@ Conventions as today: `Authorization: Bearer <APP_TOKEN>`, `X-User-Id`, errors a
 | `GET /me/profile` · `PUT /me/profile` | The health profile (3.2). `PUT` takes the profile and a transient `safety` block (never stored), validates, runs the gates, computes and stores a new target set, and returns `{ profile, targetSet, warnings }`. A reference-only outcome stores the mode and returns no targets |
 | `POST /me/targets/preview` | The same computation without saving, for the live preview in onboarding and for "what if" edits. Needs no secret before a profile exists |
 | `GET /me/targets?date=` | The target set in force on that date, each target with `how`, `basis`, `evidence`, and any custom or care-team override |
-| `GET/PUT /me/goals` (kept) | Returns recommended and custom side by side (`origin`); `PUT` keeps writing overrides, now inside the bounds of 6.4 |
+| `GET/PUT /me/goals` (kept) | Returns recommended and custom side by side (`origin`), each goal's usual bounds and a `warning` for a saved number outside them; `PUT` saves any positive override and returns a note for one outside the bounds of 6.4 |
 | `GET /me/weights?from&to` · `POST /me/weights {date, weightKg}` · `DELETE /me/weights/:date` | Weigh-ins; a new weight may create a new target set (6.2) |
 | `PUT /days/:date/status {status}` · `DELETE` | `complete`, `partial` or `skip` for a day; `DELETE` clears it |
 | `GET /reports/weekly?start=YYYY-MM-DD&weeks=8` | The whole weekly view model (below), including up to 8 weeks of history |

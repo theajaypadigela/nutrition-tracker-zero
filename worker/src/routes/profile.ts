@@ -11,7 +11,7 @@ import { randomToken, sha256Hex } from '../auth';
 import { badRequest, conflict, HttpError, json, noContent, notFound, nowIso, readJson } from '../http';
 import { SOURCES, type Source, type SourceId } from '../domain/reference/sources';
 import { daysBetween, isValidDate, localDateIn } from '../domain/time';
-import { effectiveTargets, goalRowsStatement, insertSetStatement, latestWeight, loadHealth, modeOf, profileInputOf, sameSet, storedSafety, weightsStatement, withCurrentAgeBand, type HealthProfileRow, type HealthState, type WeightRow } from '../health';
+import { goalRowsStatement, insertSetStatement, latestWeight, loadHealth, modeOf, profileInputOf, sameSet, storedSafety, targetsWithAdvice, weightsStatement, withCurrentAgeBand, type HealthProfileRow, type HealthState, type WeightRow } from '../health';
 import { computeTargets, genericTargetSet, referenceOnlySet } from '../domain/targets/engine';
 import { BMI_MAX, BMI_MIN, entryGate } from '../domain/targets/eligibility';
 import { ageOn, bmiOf, parseBirth, parseHealthProfile, parseSafety, WEIGHT_RANGE_KG } from '../domain/targets/profile';
@@ -311,7 +311,7 @@ export function registerProfile(router: Router) {
     const base = mode === 'generic' ? genericTargetSet(date) : mode === 'reference_only' ? referenceOnlySet(date, [{ id: 'reference_only', severity: 'info' }]) : set!;
     // Low-pressure mode never receives a number it was asked to hide: the targets screen is not shown (plan 8.2).
     if (hidden) return json({ mode, numbersHidden: true, targetSet: { id: base.id, effectiveFrom: base.effectiveFrom, engineVersion: base.engineVersion, mode: base.mode, warnings: base.warnings }, targets: [], sources: {}, checkIn: null });
-    const targets = effectiveTargets(base, state.goals, mode);
+    const targets = targetsWithAdvice(base, state.goals, mode);
     return json({ mode, numbersHidden: false, targetSet: targetSetJson(base), targets, sources: sourcesOf(targets), checkIn: checkInOf(set, today) });
   });
 

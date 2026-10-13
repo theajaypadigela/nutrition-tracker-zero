@@ -6,7 +6,7 @@ checks on food and portion accuracy (see *What changed in the second round* belo
 **as recommended**, because none was answered. **Nothing is committed** (the earlier UI redesign is still staged but uncommitted; the
 plan, the new files and this round are untracked or unstaged).
 
-Last runs (2026-10-13, after Login and Register): Worker 46 files / 736 tests pass, `tsc` clean. App 39 suites / 802 tests pass, `tsc` clean, eslint 0 errors (2 old warnings).
+Last runs (2026-10-13, after the phone-call audio work): Worker 46 files / 736 tests pass. App 44 suites / 852 tests pass, `tsc` clean, eslint 0 errors (2 old warnings).
 
 ## 0. Deployed on Cloudflare's free plan (2026-10-13)
 
@@ -88,6 +88,74 @@ password toggle have not been seen); the on-device PBKDF2 speed in Hermes (1,000
 **Decisions to revisit:** a username rather than an email (nothing here can send one, and `users.name` is already unique); no password
 reset; a profile made before accounts cannot log in once logged out (it needs a "set a password" step, or a claim, which was left out as
 a security decision for you); `GET/POST /profiles` still open to the shared token.
+
+## 0e. Targets you set yourself, and the lock screen (2026-10-13), not deployed
+
+- **Saving personal targets leaves the flow.** Step 6's Save (and the under-19 and reference-only end screens) take the flow's steps off
+  the stack (`navigation/healthFlow.ts`), so Back from "Your targets" goes to where the flow was opened. Before, React Navigation 7's
+  `navigate` pushed a new screen on top, so Back walked through all six steps.
+- **Daily targets always closes on Save.** It used to stay open whenever the Worker sent a note (always for carbs or fat).
+- **Any positive number is saved.** Values outside the usual range (plan 6.4) get a warning as they are typed and on "Your targets",
+  which now also shows "Recommended: …" next to a custom number, a "Change your targets" row, and a Change button on each target.
+  The Worker's `PUT /me/goals` no longer refuses values outside the bounds (only non-numbers, zero or less, over 100,000). Care-team
+  numbers keep their typo guard.
+- **Only the call screen shows over the lock screen.** `MainActivity` lost its static `showWhenLocked`/`turnScreenOn`; it turns them on
+  when a call is answered and while the call screen is open (`setCallScreenShown`), and off when it closes, asking for the PIN. The ring
+  screen no longer dismisses the keyguard. Until the call screen draws, a plain cover hides whatever page was open.
+
+**Needs a Worker deploy** for the warnings and for values that used to be refused (the old Worker still refuses them; the app shows its
+error). On-device builds have it already.
+
+**Verified:** Worker and app tests, `tsc`, ESLint, the Kotlin build; on the emulator (a separate `.locktest` on-device build, since
+removed): the flow's Save and Back, typing and saving targets outside the range, and, with a temporary PIN, a normal page staying behind the
+lock, the call screen over it, Done asking for the PIN, and an answered ring opening only the call screen. **Left for your own test on a
+phone:** whether the previous page flashes before the cover; "Log now" on a missed-call notification should now ask to unlock first (not
+tried).
+
+## 0f. Calls that work like a phone call: earpiece, speaker, proximity (2026-10-13), app only
+
+- **Opens on the earpiece.** Daily (under Vapi) opened every call in its "video" mode, which is the **loudspeaker**. The app now puts
+  it in "voice" mode before it joins, so a call starts on the earpiece, or on a headset when one is connected.
+- **Phone | Speaker on the call screen**, plus **Bluetooth** or **Headphones** when connected; one tap switches at any time.
+- **Screen off at the ear.** While the earpiece is in use the screen turns off against the ear and back on away from it, and the call
+  screen ignores touches meanwhile. If the call ends at the ear, the screen stays off until the phone moves away.
+- **Android:** a new native module, `CallAudio` (`android/app/src/main/java/com/nutritiontrackerzero/callaudio/`). It routes with
+  `setCommunicationDevice` on Android 12+ (the speakerphone and Bluetooth SCO switches on 7 to 11) and holds a
+  `PROXIMITY_SCREEN_OFF_WAKE_LOCK` (the system switches the screen and touch off, as dialers do). It puts the chosen route back if
+  something else moves it (at most 3 times in 5 s), moves the call to a headset that connects mid-call, and falls back to the
+  earpiece when one goes away. Vapi's own "re-apply Daily's route on every device change" listener is removed for the call.
+  **iOS:** Daily routes (AVAudioSession); `IncomingCall.setProximityMonitoring` turns on UIDevice proximity monitoring for the
+  earpiece. JS: `src/services/calls/callAudio.ts`, `audioRoute.ts`, `components/voice/AudioRouteControl.tsx`.
+- **APK:** `~/Downloads/NutritionTrackerZero-calls.apk` (hosted mode, same key and version code; install over the old one, never
+  uninstall first). No Worker change, nothing to deploy.
+
+**Verified:** app tests (+4 suites: `audioRoute`, `callAudio`, `callAudioScreen`, `useVapiCallAudio`), `tsc`, ESLint, the Kotlin build,
+the iOS Swift call against the iOS SDK. On the emulator (Android 16, a separate `.calltest` build, since removed): the module loads
+through the bridge, starts, reports, ignores a route the phone lacks, and stops; with the emulator's virtual proximity sensor the
+real screen-off lock turned the display **off** when near and **on** when far, kept it off when released while near, and was released
+afterwards; the call screen's controls looked right in light and dark, at 360 dp with a 1.3x font.
+
+**Not verified, needs your phone:** the emulator has **no earpiece** (speaker only), so routing between earpiece and speaker, and the
+screen going off during a real call, were never seen together; nor were Bluetooth or wired headsets, or iOS (the iOS Pods predate several
+native dependencies and were not rebuilt). Worth trying: start a call (it should be quiet until it is at your ear), hold it to your ear
+(screen off), tap Speaker, connect Bluetooth earbuds mid-call.
+
+**Decision to revisit:** every call opens on the earpiece, as a phone call does, including one started from the app's button. If you
+would rather it remember Speaker, that is a small change.
+
+**Vapi cost review: findings only, not acted on (you said to leave it for now).** Nothing in the Vapi settings was changed.
+- The 9 calls in the Vapi account (all from testing, 10 to 13 Oct) total about 6 minutes. **3 ended on the silence timeout, and those 3
+  are about half of all call time**: each waited about 30 s of silence before hanging up. The current API has no
+  `silenceTimeoutSeconds` on an assistant any more; `hooks` with `customer.speech.timeout` can ask "Are you still there?" and end
+  sooner.
+- **The voice "Neha" was retired by Vapi on 1 March 2026** (their migration page names "Navya Kannan" as its replacement); the assistant
+  still asks for it, so the voice you hear is Vapi's substitute. Pick a current voice deliberately (cheaper per-character options exist,
+  such as Azure's `en-IN` voices).
+- **Possible lost saves:** the model's default output limit is 250 tokens a turn; a `save_foods` call for a long day (about 20 tokens an
+  item) can be cut off. Raising `model.maxTokens` costs nothing unless used.
+- Vapi's own fee ($0.05 a minute) is the largest part of the bill, so call length matters most; `maxDurationSeconds` is 600 (10 min).
+  The model (`gpt-4o-mini`) and transcriber (Deepgram `nova-3`, multilingual) are already low-cost choices. The Vapi MCP shows each
+  call's status but not its cost; the dashboard's call log has the per-call breakdown.
 
 ## 1. Needs people, not code. Until these are done, keep the audience to your own circle
 

@@ -170,3 +170,60 @@ describe('the Targets screen on the India set (ICMR-NIN, plan 4.10)', () => {
     expect(t).toContain('Sodium is a limit of 2,000 mg a day, about 5 g of salt.');
   });
 });
+
+describe('the Targets screen with targets the person typed (plan 6.4)', () => {
+  const nav = (jest.requireMock('@react-navigation/native') as { __nav: Record<string, jest.Mock> }).__nav;
+  const typed = (nutrient: string, value: number, extra: Partial<TargetsResponse['targets'][number]>) => {
+    const base = RESPONSE.targets.find(x => x.nutrient === nutrient)!;
+    return { ...base, value, origin: 'custom' as const, evidence: 'A' as const, basis: 'custom-target', ...extra };
+  };
+  const withTyped = (...targets: TargetsResponse['targets']): TargetsResponse => ({
+    ...RESPONSE,
+    targets: RESPONSE.targets.map(x => targets.find(y => y.nutrient === x.nutrient) ?? x),
+  });
+  const press = async (tree: TestRenderer.ReactTestRenderer, id: string) => {
+    const node = tree.root.findAll((n: ReactTestInstance) => n.props.testID === id && typeof n.props.onPress === 'function')[0]!;
+    await act(async () => { node.props.onPress(); });
+  };
+
+  it('shows the recommended value next to a typed one, and the warning for one away from the usual values', async () => {
+    const sodiumWarning = 'A limit under 1,500 mg asks for less than the body usually needs.';
+    api_.getTargets.mockResolvedValue(
+      withTyped(typed('sodium', 1200, { recommended: 2300, warning: sodiumWarning }), typed('protein', 90, { recommended: 60 })),
+    );
+    const tree = await render();
+    const t = all(tree);
+    expect(t).toContain('1,200 mg');
+    expect(t).toContain('Recommended: 2,300 mg');
+    expect(t).toContain('Recommended: 60 g');
+    expect(t).toContain(sodiumWarning);
+    expect(tree.root.findAll((n: ReactTestInstance) => n.props.testID === 'target-warning-protein')).toHaveLength(0);
+  });
+
+  it('shows a typed calorie target in the energy card, not the estimate it replaced', async () => {
+    api_.getTargets.mockResolvedValue(withTyped(typed('calories', 2600, { recommended: 2150 })));
+    const card = (await render()).root.findAll((n: ReactTestInstance) => n.props.testID === 'targets-energy')[0]!;
+    const t = card.findAll((n: ReactTestInstance) => (n.type as unknown) === 'Text').map(textOf).join('\n');
+    expect(t).toContain('2,600');
+    expect(t).toContain('Custom');
+    expect(t).toContain('Recommended: 2,150 kcal');
+  });
+
+  it('opens the screen to change any target, from the list and from a row', async () => {
+    const tree = await render();
+    await press(tree, 'targets-edit');
+    expect(nav.navigate).toHaveBeenCalledWith('Goals');
+    nav.navigate!.mockClear();
+    const row = tree.root.findAll((n: ReactTestInstance) => typeof n.props.accessibilityLabel === 'string' && n.props.accessibilityLabel.startsWith('Protein, ') && typeof n.props.onPress === 'function')[0]!;
+    await act(async () => { row.props.onPress(); });
+    const change = tree.root.findAll((n: ReactTestInstance) => n.props.label === 'Change' && typeof n.props.onPress === 'function')[0]!;
+    await act(async () => { change.props.onPress(); });
+    expect(nav.navigate).toHaveBeenCalledWith('Goals');
+  });
+
+  it('offers no change for a profile without personal targets: it types its care team’s numbers instead', async () => {
+    api_.getTargets.mockResolvedValue({ ...RESPONSE, mode: 'reference_only', targets: [] });
+    const tree = await render();
+    expect(tree.root.findAll((n: ReactTestInstance) => n.props.testID === 'targets-edit')).toHaveLength(0);
+  });
+});

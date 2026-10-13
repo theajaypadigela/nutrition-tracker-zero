@@ -349,6 +349,15 @@ dialogs and pickers follow it (`src/theme/`).
   profile's time zone. Its headless handler asks the native `IncomingCall` service to ring full screen.
 - **Answer.** Opens the call screen, which runs `POST /calls/start`, then `vapi.start(assistant)`, then
   `POST /calls/:id/started`.
+- **On the call, like a phone call.** The call opens on the earpiece (or a connected headset), not the loudspeaker: Daily,
+  under Vapi, defaults to its loudspeaker "video" mode, so `openOnEarpiece` switches it to "voice" before it joins. The
+  call screen has **Phone | Speaker** (plus **Bluetooth** or **Headphones** when connected) to switch at any time. While
+  the earpiece is in use the screen turns off against the ear and touches are ignored. Android: the `CallAudio` native
+  module (`android/.../callaudio/`) routes with `setCommunicationDevice` on Android 12+ (the speakerphone and Bluetooth
+  SCO switches before that), holds a `PROXIMITY_SCREEN_OFF_WAKE_LOCK` (the system switches the screen and touch off,
+  as dialers do), keeps the chosen route if something else moves it, and moves the call to a headset that connects
+  mid-call. iOS: Daily routes, and `UIDevice` proximity monitoring blanks the screen. JS side:
+  `src/services/calls/callAudio.ts` and `audioRoute.ts`.
 - **No answer after 60 s.** A missed-call notification appears with **Log now** and **Snooze (10 min)**.
   A scheduled call also re-rings **once** 60 min later; the native side schedules this, so it works with
   the app killed. Snooze replaces that retry. A decline never retries.

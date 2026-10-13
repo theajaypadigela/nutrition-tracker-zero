@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Plus } from 'lucide-react-native';
 import { api } from '@/api/client';
 import type { CallInfo, Item } from '@/api/types';
@@ -9,6 +9,8 @@ import { EditItemSheet } from '@/components/today/EditItemSheet';
 import VoiceSessionScreen, { type CallStatus } from '@/components/voice/VoiceSessionScreen';
 import { useVapiCall, type VoiceStatus } from '@/hooks/useVapiCall';
 import type { RootStackParamList } from '@/navigation/types';
+import { shouldShield } from '@/services/calls/audioRoute';
+import { setCallScreenShown } from '@/services/calls/native';
 import { space, useTheme } from '@/theme';
 import { formatNumber, formatQuantity } from '@/utils/format';
 
@@ -62,10 +64,18 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
 export default function VoiceCallScreen() {
   const navigation = useNavigation();
   const { params } = useRoute<RouteProp<RootStackParamList, 'VoiceCall'>>();
-  const { status, error, transcript, isSpeaking, session, start, stop } = useVapiCall();
+  const { status, error, transcript, isSpeaking, session, audio, setAudioRoute, start, stop } = useVapiCall();
   const started = useRef(false);
   const [editing, setEditing] = useState<Item | null>(null);
   const [version, setVersion] = useState(0);
+
+  // This is the one screen that may show over the lock screen; leaving it (Done, Back, Add items) needs the phone unlocked.
+  useFocusEffect(
+    useCallback(() => {
+      setCallScreenShown(true);
+      return () => setCallScreenShown(false);
+    }, []),
+  );
 
   useEffect(() => {
     if (params.autoStart && !started.current) {
@@ -93,6 +103,9 @@ export default function VoiceCallScreen() {
         onDonePress={() => navigation.goBack()}
         onRetryPress={() => start(params.kind)}
         outcome={ended ? <Outcome items={outcome.items} call={outcome.call} onOpenItem={setEditing} /> : null}
+        audio={audio}
+        onSelectAudioRoute={setAudioRoute}
+        shielded={status === 'active' && shouldShield(audio)}
       />
       <EditItemSheet item={editing} isOpen={!!editing} onClose={() => setEditing(null)} onSaved={() => setVersion(v => v + 1)} />
     </>

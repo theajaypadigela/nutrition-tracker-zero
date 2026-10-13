@@ -29,4 +29,6 @@ RCT_EXTERN_METHOD(canUseFullScreenIntent:(RCTPromiseResolveBlock)resolve
 
 RCT_EXTERN_METHOD(openFullScreenIntentSettings)
 
+RCT_EXTERN_METHOD(setProximityMonitoring:(BOOL)enabled)
+
 @end

@@ -315,6 +315,10 @@ export const strings = {
       custom: 'Custom',
       careTeam: 'From your care team',
       reset: 'Reset to recommended',
+      change: 'Change',
+      edit: 'Change your targets',
+      editHint: 'Set your own number for any target, higher or lower than recommended.',
+      recommendedValue: 'Recommended: {value}',
       groups: {
         energy: 'Energy',
         macros: 'Macros and fibre',

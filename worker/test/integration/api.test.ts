@@ -135,16 +135,21 @@ describe('settings and goals', () => {
     expect((await api('PUT', '/me/goals', { userId, secret, body: { goals: { protein: -1 } } })).status).toBe(400);
   });
 
-  it('refuses a calorie goal under 800 kcal and above 6,000, and says why', async () => {
+  it('saves a calorie goal under 1,200 kcal or above 6,000 with a warning, and refuses only a number that is not a target', async () => {
     const { userId, secret } = await createProfileWithSecret();
     const low = await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 799 } } });
-    expect(low.status).toBe(400);
-    expect(low.body.error.message).toMatch(/doctor or dietitian/);
-    expect(low.body.error.field).toBe('calories');
-    expect((await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 6001 } } })).status).toBe(400);
-    expect((await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 800 } } })).status).toBe(200);
+    expect(low.status).toBe(200);
+    expect(low.body.notes).toEqual([{ nutrient: 'calories', note: expect.stringMatching(/doctor or dietitian/) }]);
+    const high = await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 6001 } } });
+    expect(high.status).toBe(200);
+    expect(high.body.notes[0].note).toMatch(/more than 6,000 kcal/);
+    expect(high.body.goals.find((g: any) => g.key === 'calories')).toMatchObject({ target: 6001, bounds: { low: 1200, high: 6000 } });
+    const zero = await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 0 } } });
+    expect(zero.status).toBe(400);
+    expect(zero.body.error.field).toBe('calories');
+    expect((await api('PUT', '/me/goals', { userId, secret, body: { goals: { calories: 100_001 } } })).status).toBe(400);
     // A refused value is never partly saved.
-    const refused = await api('PUT', '/me/goals', { userId, secret, body: { goals: { protein: 90, calories: 300 } } });
+    const refused = await api('PUT', '/me/goals', { userId, secret, body: { goals: { protein: 90, calories: -300 } } });
     expect(refused.status).toBe(400);
     const goals = await api('GET', '/me/goals', { userId });
     expect(goals.body.goals.find((g: any) => g.key === 'protein')).toMatchObject({ custom: false });

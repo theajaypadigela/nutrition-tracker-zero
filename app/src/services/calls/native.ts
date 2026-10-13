@@ -15,6 +15,7 @@ type IncomingCallNativeModule = {
   cancelAutoRetry?: () => void;
   canUseFullScreenIntent: () => Promise<boolean>;
   openFullScreenIntentSettings: () => void;
+  setCallScreenShown?: (shown: boolean) => void;
 };
 
 const nativeModule: IncomingCallNativeModule | null =
@@ -93,6 +94,18 @@ export async function drainRingResults(): Promise<RingResult[]> {
 export function cancelAutoRetry(): void {
   try {
     nativeModule?.cancelAutoRetry?.();
+  } catch {
+    // best effort
+  }
+}
+
+/**
+ * The call screen opened or closed (Android). It is the only screen that may show over the lock screen: once it closes,
+ * the rest of the app needs the phone unlocked, and the person is asked to unlock if it is locked.
+ */
+export function setCallScreenShown(shown: boolean): void {
+  try {
+    nativeModule?.setCallScreenShown?.(shown);
   } catch {
     // best effort
   }

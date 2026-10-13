@@ -6,6 +6,8 @@ import { api, deliverVapiMessage, errorMessage } from '@/api/client';
 import type { CallKind } from '@/api/types';
 import { ON_DEVICE } from '@/config/local';
 import { CallBridge, type EndedReason } from '@/embedded/vapi';
+import type { AudioRoute, CallAudioState } from '@/services/calls/audioRoute';
+import { createCallAudioSession, openOnEarpiece, type CallAudioSession } from '@/services/calls/callAudio';
 import { reminderLog } from '@/services/calls/logger';
 import { describeVapiError, isMeetingEnded } from '@/services/calls/vapiErrors';
 import {
@@ -35,6 +37,9 @@ async function ensureMicrophone(): Promise<boolean> {
  * One Vapi web call: POST /calls/start (server records the call and builds the inline assistant),
  * vapi.start(assistant), then link the Vapi call id or report the failure (PLAN.md §9.1).
  *
+ * The call sounds like a phone call (services/calls/callAudio.ts): it opens on the earpiece, or a connected headset, and
+ * `setAudioRoute` moves it to the speaker and back; while the earpiece is in use the screen goes dark against the ear.
+ *
  * When the Worker runs inside the app (ON_DEVICE) no server receives Vapi's messages, so a CallBridge feeds the call's
  * save_foods and its end-of-call report to the same webhook handler (src/embedded/vapi.ts).
  */
@@ -44,6 +49,7 @@ export function useVapiCall() {
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [session, setSession] = useState<{ callId: number; localDate: string; vapiCallId: string | null } | null>(null);
+  const [audio, setAudio] = useState<CallAudioState | null>(null);
 
   const vapiRef = useRef<Vapi | null>(null);
   const statusRef = useRef<VoiceStatus>('idle');
@@ -51,13 +57,20 @@ export function useVapiCall() {
   const failureReportedRef = useRef(false);
   const bridgeRef = useRef<CallBridge | null>(null);
   const endedByUserRef = useRef(false);
+  const audioRef = useRef<CallAudioSession | null>(null);
 
   const update = useCallback((s: VoiceStatus) => {
     statusRef.current = s;
     setStatus(s);
   }, []);
 
+  const stopAudio = useCallback(() => {
+    audioRef.current?.stop();
+    audioRef.current = null;
+  }, []);
+
   const dispose = useCallback(() => {
+    stopAudio();
     const v = vapiRef.current;
     vapiRef.current = null;
     // Leaving the screen mid-call: the listeners go now, so the call's report would never be sent; send it first.
@@ -71,12 +84,13 @@ export function useVapiCall() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [stopAudio]);
 
   const fail = useCallback(
     (reason: string) => {
       setError(reason);
       update('error');
+      stopAudio();
       dismissIncomingCall();
       const rowId = callRowRef.current;
       // Only a call that never connected is a client-side failure; later ones get an end-of-call report.
@@ -85,7 +99,7 @@ export function useVapiCall() {
         api.callFailed(rowId, reason).catch(() => {});
       }
     },
-    [update],
+    [stopAudio, update],
   );
 
   const start = useCallback(
@@ -130,8 +144,15 @@ export function useVapiCall() {
       const bridge = ON_DEVICE ? new CallBridge({ callRowId: started.callId, localDate: started.localDate, deliver: deliverVapiMessage }) : null;
       bridgeRef.current = bridge;
       const endReason = (): EndedReason => (endedByUserRef.current ? 'customer-ended-call' : 'assistant-ended-call');
+      const audioSession = createCallAudioSession(setAudio);
+      audioRef.current = audioSession;
+      // Emitted as soon as Daily's call object exists, before it joins: the call then opens on the earpiece.
+      vapi.on('call-start-progress', (e: { stage?: string; status?: string }) => {
+        if (e?.stage === 'daily-call-object-creation' && e.status === 'completed') openOnEarpiece(vapi.getDailyCallObject());
+      });
       vapi.on('call-start', () => {
         update('active');
+        audioSession.start(vapi.getDailyCallObject());
         try {
           vapi.setMuted(false);
         } catch {
@@ -140,6 +161,7 @@ export function useVapiCall() {
       });
       vapi.on('call-end', () => {
         setIsSpeaking(false);
+        audioSession.stop();
         dismissIncomingCall();
         // On the phone the report is written first, so the outcome card finds the call already settled.
         const written = bridge ? bridge.finish(endReason()) : Promise.resolve();
@@ -162,6 +184,7 @@ export function useVapiCall() {
         if (statusRef.current === 'active' && isMeetingEnded(e)) {
           reminderLog.info('vapi.ended_by_server', reason);
           setIsSpeaking(false);
+          audioSession.stop();
           dismissIncomingCall();
           const written = bridge ? bridge.finish(endReason()) : Promise.resolve();
           written.then(() => update('ended'));
@@ -171,6 +194,7 @@ export function useVapiCall() {
         if (statusRef.current === 'connecting') fail(reason);
         else if (statusRef.current === 'active') {
           setError(reason);
+          audioSession.stop();
           bridge?.finish('pipeline-error');
           update('error');
         }
@@ -191,6 +215,10 @@ export function useVapiCall() {
     },
     [dispose, fail, update],
   );
+
+  const setAudioRoute = useCallback((route: AudioRoute) => {
+    audioRef.current?.setRoute(route);
+  }, []);
 
   const stop = useCallback(() => {
     endedByUserRef.current = true;
@@ -222,5 +250,5 @@ export function useVapiCall() {
     };
   }, [dispose, stop]);
 
-  return { status, error, transcript, isSpeaking, session, start, stop };
+  return { status, error, transcript, isSpeaking, session, audio, setAudioRoute, start, stop };
 }

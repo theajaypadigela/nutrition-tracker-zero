@@ -83,7 +83,12 @@ export default function RootNavigator() {
           <Stack.Screen
             name="VoiceCall"
             component={VoiceCallScreen}
-            options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+            // A call that was answered (or opened from a notification) takes over at once, so nothing slides in under the lock screen.
+            options={({ route }) => ({
+              presentation: 'fullScreenModal',
+              gestureEnabled: false,
+              animation: route.params?.autoStart ? 'none' : 'default',
+            })}
           />
           <Stack.Screen name="AddItems" component={AddItemsScreen} />
           <Stack.Screen name="FoodEditor" component={FoodEditorScreen} />

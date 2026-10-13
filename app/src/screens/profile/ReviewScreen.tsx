@@ -7,6 +7,7 @@ import { StackScreen } from '@/components/layout/StackScreen';
 import { HowWeCalculate } from '@/components/health/HowWeCalculate';
 import { useAsync } from '@/hooks/useAsync';
 import { CONSENT_VERSION, strings } from '@/i18n/strings';
+import { leaveHealthFlow } from '@/navigation/healthFlow';
 import { useHealth } from '@/state/HealthContext';
 import { flagged, profileInputOf, safetyOf, useHealthDraft } from '@/state/HealthDraft';
 import { space } from '@/theme';
@@ -51,8 +52,8 @@ export default function ReviewScreen() {
       });
       health.apply(r);
       reset();
-      if (r.profile.mode === 'reference_only') navigation.navigate('ReferenceOnly');
-      else navigation.navigate('Targets');
+      // The flow's steps come off the stack: Back from the targets goes to where the flow was opened, not through it again.
+      leaveHealthFlow(navigation, r.profile.mode === 'reference_only' ? 'ReferenceOnly' : 'Targets');
     } catch (e) {
       setError(errorMessage(e));
     } finally {

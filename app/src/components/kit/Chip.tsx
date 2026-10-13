@@ -24,12 +24,16 @@ const useStyles = createStyles(({ colors }) => ({
   },
   segment: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     height: 34,
     paddingHorizontal: space.md,
     borderRadius: radius.md - 4,
   },
+  // Icon over label, like the buttons on a phone's call screen: three of them fit 360 dp at a large font size.
+  segmentTall: { height: 56, flexDirection: 'column', gap: 2, paddingHorizontal: space.xs },
   thumb: { backgroundColor: colors.surface, borderWidth: hairline, borderColor: colors.border },
   dot: { width: 7, height: 7, borderRadius: 4 },
 }));
@@ -88,15 +92,17 @@ export function Chip({
   );
 }
 
-/** Two or three exclusive options in one track (Amount / %). */
+/** Two or three exclusive options in one track (Amount / %). `tall` (icon over label) is for a control used mid-call. */
 export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  tall,
 }: {
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; icon?: LucideIcon; testID?: string }[];
   value: T;
   onChange: (v: T) => void;
+  tall?: boolean;
 }) {
   const styles = useStyles();
   return (
@@ -106,14 +112,22 @@ export function Segmented<T extends string>({
         return (
           <Pressable
             key={o.value}
+            testID={o.testID}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             accessibilityLabel={o.label}
             onPress={() => onChange(o.value)}
             hitSlop={{ top: 5, bottom: 5 }}
-            style={[styles.segment, selected ? styles.thumb : null]}
+            style={[styles.segment, tall ? styles.segmentTall : null, selected ? styles.thumb : null]}
           >
-            <Text variant="smallStrong" tone={selected ? 'text' : 'muted'}>
+            {o.icon ? <Icon as={o.icon} size="sm" tone={selected ? 'primary' : 'muted'} /> : null}
+            <Text
+              variant="smallStrong"
+              tone={selected ? 'text' : 'muted'}
+              numberOfLines={tall ? 1 : undefined}
+              adjustsFontSizeToFit={tall}
+              minimumFontScale={tall ? 0.75 : undefined}
+            >
               {o.label}
             </Text>
           </Pressable>

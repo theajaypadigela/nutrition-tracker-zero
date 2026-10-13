@@ -10,7 +10,7 @@
 import { NUTRIENTS, isNutrientKey, type NutrientKey } from './domain/nutrients';
 import { genericReference } from './domain/reference/nasem';
 import { setInForce } from './domain/report/weekly';
-import { applyOverrides, type Override } from './domain/targets/overrides';
+import { applyOverrides, checkOverride, type Override } from './domain/targets/overrides';
 import { computeTargets, genericTargetSet, referenceOnlySet } from './domain/targets/engine';
 import { ageOn } from './domain/targets/profile';
 import { referenceBandOf } from './domain/reference/icmr';
@@ -299,6 +299,21 @@ export function effectiveTargets(set: TargetSet | null, goals: readonly GoalRow[
   const overrides = overridesOf(goals);
   if (mode === 'reference_only') return applyOverrides([], overrides);
   return applyOverrides((set ?? genericTargetSet('')).targets, overrides);
+}
+
+/**
+ * The effective targets, each typed one with the recommended value it replaced and, when it is away from the usual
+ * values, a warning (plan 6.4): the targets screen shows the ideal next to the person's own number.
+ */
+export function targetsWithAdvice(set: TargetSet | null, goals: readonly GoalRow[], mode: Mode): (Target & { recommended?: number; warning?: string })[] {
+  const personal = mode === 'personalised' ? set : null;
+  const recommended = new Map(mode === 'reference_only' ? [] : (set ?? genericTargetSet('')).targets.map((t) => [t.nutrient, t.value]));
+  return effectiveTargets(set, goals, mode).map((t) => {
+    if (t.origin !== 'custom') return t;
+    const rec = recommended.get(t.nutrient);
+    const warning = checkOverride({ nutrient: t.nutrient, value: t.value, set: personal, sex: personal?.inputs?.sexForCalc ?? null }).note;
+    return { ...t, ...(rec !== undefined ? { recommended: rec } : {}), ...(warning ? { warning } : {}) };
+  });
 }
 
 export { referenceOnlySet, genericTargetSet };

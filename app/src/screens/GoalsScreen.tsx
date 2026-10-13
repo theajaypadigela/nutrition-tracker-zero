@@ -8,6 +8,8 @@ import { useAsync } from '@/hooks/useAsync';
 import { strings } from '@/i18n/strings';
 import type { RootStackParamList } from '@/navigation/types';
 import { useHealth } from '@/state/HealthContext';
+import { goalWarning, parseGoal } from '@/utils/goals';
+import { fmtNum } from '@/utils/nutrition';
 
 /** Targets are grouped so the ones people set are first and the long tail of vitamins is last. */
 const SECTIONS: { title: string; keys: string[] | null }[] = [
@@ -18,8 +20,9 @@ const SECTIONS: { title: string; keys: string[] | null }[] = [
 
 /**
  * Typed numbers over the recommended ones (WEEKLY_BREAKDOWN_PLAN.md 6.1, 6.4, 6.7). The grey number in each field is the
- * recommended target (or, with no profile, the general reference); typing a number overrides it, clearing it goes
- * back. For a profile without personal targets the same screen takes the numbers a care team gave.
+ * recommended target (or, with no profile, the general reference); typing a number overrides it, higher or lower, and
+ * clearing it goes back. A number away from the usual values gets a warning as it is typed but is saved all the same,
+ * and saving closes the screen. For a profile without personal targets the same screen takes the numbers a care team gave.
  */
 export default function GoalsScreen() {
   const navigation = useNavigation();
@@ -29,28 +32,41 @@ export default function GoalsScreen() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notes, setNotes] = useState<string[]>([]);
 
   const list = goals.data?.goals;
-  const floor = goals.data?.warnings.find(w => w.id === 'below_floor');
-  const careTeam = route.params?.careTeam === true || goals.data?.mode === 'reference_only';
+  const mode = goals.data?.mode;
+  const careTeam = route.params?.careTeam === true || mode === 'reference_only';
   const hidden = goals.data?.hidden === true;
-  const outside = (list ?? []).filter(g => g.outsideBounds).map(g => g.label);
 
   useEffect(() => {
     if (list)
       setValues(Object.fromEntries(list.map(g => [g.key, g.custom && g.target != null ? String(g.target) : ''])));
   }, [list]);
 
+  /** The value an empty field stands for: the recommended target, or with no profile the general reference. */
+  const ideal = (g: GoalDetail) => g.recommended ?? (mode === 'generic' ? g.defaultGoal : null);
+  /** A warning for what is typed in the field now. A care-team number is used as typed and is never measured. */
+  const warningFor = (g: GoalDetail) => {
+    const typed = parseGoal(values[g.key] ?? '');
+    return careTeam || typed === null ? null : goalWarning(g.bounds, typed);
+  };
+  /** The ideal stays in view next to a number of the person's own. */
+  const hintFor = (g: GoalDetail) => {
+    const typed = parseGoal(values[g.key] ?? '');
+    const value = ideal(g);
+    if (careTeam || typed === null || value == null || typed === value) return null;
+    return `${g.recommended != null ? 'Recommended' : 'General reference'}: ${fmtNum(value, g.unit)}`;
+  };
+  const warned = (list ?? []).filter(g => warningFor(g) !== null).length;
+
   const save = async () => {
     const patch: Record<string, number | null> = {};
     for (const g of list ?? []) {
-      const raw = (values[g.key] ?? '').trim().replace(',', '.');
-      if (!raw) {
+      const v = parseGoal(values[g.key] ?? '');
+      if (v === null) {
         if (g.custom) patch[g.key] = null;
         continue;
       }
-      const v = Number(raw);
       if (!Number.isFinite(v) || v <= 0) {
         setError(`${g.label}: enter a positive number or leave it empty`);
         return;
@@ -60,14 +76,10 @@ export default function GoalsScreen() {
     setSaving(true);
     setError(null);
     try {
-      const saved = await api.updateGoals(patch, careTeam ? 'care_team' : 'custom');
+      await api.updateGoals(patch, careTeam ? 'care_team' : 'custom');
       health.refresh();
-      const said = (saved.notes ?? []).map(n => n.note);
-      // A calorie target under the floor, or a note about a value that was accepted, stays on screen with its message.
-      if (saved.warnings.length > 0 || said.length > 0) {
-        goals.setData(saved);
-        setNotes(said);
-      } else navigation.goBack();
+      // Saved: close the screen. Any warning was shown while typing and stays next to the target on the targets screen.
+      if (navigation.canGoBack()) navigation.goBack();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -90,6 +102,12 @@ export default function GoalsScreen() {
       footer={
         <>
           {error ? <Notice tone="danger">{error}</Notice> : null}
+          {warned > 0 ? (
+            <Text variant="caption" tone="muted" testID="goals-warned">
+              {warned === 1 ? 'One target is' : `${warned} targets are`} away from the usual range. You can still save
+              {warned === 1 ? ' it' : ' them'} as typed.
+            </Text>
+          ) : null}
           <Button
             label="Save targets"
             size="lg"
@@ -97,25 +115,12 @@ export default function GoalsScreen() {
             loading={saving}
             disabled={!goals.data || hidden}
             onPress={save}
+            testID="goals-save"
           />
         </>
       }
     >
       {hidden ? <Notice tone="info">Numbers are hidden. You can show them again in Settings.</Notice> : null}
-      {floor ? (
-        <Notice tone="warning" testID="floor-warning">
-          Your calorie target is under {floor.floor.toLocaleString('en-US')} kcal. That is lower than most guidance for
-          adults; a doctor or dietitian can help you set it.
-        </Notice>
-      ) : null}
-      {outside.length > 0 ? (
-        <Notice tone="info">Outside the usual bounds, but kept as you set it: {outside.join(', ')}.</Notice>
-      ) : null}
-      {notes.map(n => (
-        <Notice key={n} tone="info">
-          {n}
-        </Notice>
-      ))}
       {!goals.data ? goals.error ? <Notice tone="danger">{goals.error}</Notice> : <LoadingState /> : null}
 
       {list && !hidden
@@ -131,14 +136,11 @@ export default function GoalsScreen() {
                       label={g.label}
                       unit={g.unit}
                       value={values[g.key] ?? ''}
-                      onChangeText={v => setValues({ ...values, [g.key]: v })}
-                      placeholder={
-                        g.recommended != null
-                          ? String(g.recommended)
-                          : g.origin === 'reference' && g.defaultGoal != null
-                            ? String(g.defaultGoal)
-                            : 'None'
-                      }
+                      onChangeText={v => setValues(prev => ({ ...prev, [g.key]: v }))}
+                      placeholder={ideal(g) != null ? String(ideal(g)) : 'None'}
+                      hint={hintFor(g)}
+                      warning={warningFor(g)}
+                      testID={`goal-${g.key}`}
                     />
                   ))}
                 </ListGroup>
@@ -150,9 +152,9 @@ export default function GoalsScreen() {
       <Text variant="caption" tone="muted">
         {careTeam
           ? 'Used as typed, with only a check for typing mistakes. Nothing here is a recommendation, and no score is worked out from it.'
-          : goals.data?.mode === 'personalised'
-            ? 'The grey number is your recommended target. Typing a number overrides it; clearing the field goes back. Targets under 800 kcal are not accepted.'
-            : `${strings.disclaimer.reference}: the grey numbers are for a typical adult on a 2,000 kcal diet. Type your own to override one.`}
+          : mode === 'personalised'
+            ? 'The grey number is your recommended target. Type your own number to change it, higher or lower; clearing the field goes back. A number away from the usual range is saved with a warning.'
+            : `${strings.disclaimer.reference}: the grey numbers are for a typical adult on a 2,000 kcal diet. Type your own to change one; a number away from the usual range is saved with a warning.`}
       </Text>
     </StackScreen>
   );

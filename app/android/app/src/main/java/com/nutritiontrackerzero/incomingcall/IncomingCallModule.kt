@@ -10,6 +10,8 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.UiThreadUtil
+import com.nutritiontrackerzero.MainActivity
 
 /**
  * JS bridge for the native incoming-call surface. Legacy module (works under the New
@@ -71,6 +73,16 @@ class IncomingCallModule(
   @ReactMethod
   fun consumePendingMissedAction(promise: Promise) {
     promise.resolve(IncomingCallStore.consumePendingMissedAction(reactApplicationContext))
+  }
+
+  /**
+   * The JS call screen opened (true) or closed (false). Only the call screen may show over the lock
+   * screen: closing it puts the rest of the app back behind the lock and asks the person to unlock.
+   */
+  @ReactMethod
+  fun setCallScreenShown(shown: Boolean) {
+    val activity = reactApplicationContext.currentActivity as? MainActivity ?: return
+    UiThreadUtil.runOnUiThread { if (shown) activity.onCallScreenShown() else activity.onCallScreenLeft() }
   }
 
   /** Android 14+ full-screen-intent special access: whether we may show a full-screen call. */

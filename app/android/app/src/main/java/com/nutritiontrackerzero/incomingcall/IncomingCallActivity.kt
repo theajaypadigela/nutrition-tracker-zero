@@ -1,7 +1,6 @@
 package com.nutritiontrackerzero.incomingcall
 
 import android.app.Activity
-import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -145,18 +144,18 @@ class IncomingCallActivity : Activity() {
     finish()
   }
 
+  /**
+   * Rings over the lock screen without unlocking it: answering opens only the call screen over the lock, and the rest of
+   * the app still needs the phone unlocked (see MainActivity.showOverLockScreen).
+   */
   private fun applyLockscreenFlags() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
       setShowWhenLocked(true)
       setTurnScreenOn(true)
-      val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-      km?.requestDismissKeyguard(this, null)
     } else {
       @Suppress("DEPRECATION")
       window.addFlags(
-        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-          WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
       )
     }
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

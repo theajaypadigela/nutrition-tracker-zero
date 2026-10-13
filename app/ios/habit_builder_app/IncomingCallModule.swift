@@ -700,4 +700,14 @@ final class IncomingCallModule: RCTEventEmitter {
   /// No-op parity method: iOS has no per-app full-screen-intent settings page.
   @objc
   func openFullScreenIntentSettings() {}
+
+  /// The voice check-in plays through the earpiece (on) or not (off). While on, iOS itself turns the screen and its
+  /// touches off when the phone is held to the ear, as in a phone call (src/services/calls/callAudio.ts). Android does
+  /// this in its CallAudio module.
+  @objc(setProximityMonitoring:)
+  func setProximityMonitoring(_ enabled: Bool) {
+    DispatchQueue.main.async {
+      UIDevice.current.isProximityMonitoringEnabled = enabled
+    }
+  }
 }

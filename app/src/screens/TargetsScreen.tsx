@@ -1,10 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Pencil } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
 import type { SourceInfo, TargetInfo } from '@/api/types';
-import { Badge, Button, Card, Icon, ListGroup, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
+import { Badge, Button, Card, Icon, ListGroup, ListRow, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import { HowWeCalculate } from '@/components/health/HowWeCalculate';
 import { SourceLink } from '@/components/health/SourceLink';
@@ -43,16 +43,43 @@ const GROUPS: { title: string; keys: string[] }[] = [
 const originLabel = (o: TargetInfo['origin']) =>
   o === 'custom' ? t.custom : o === 'care_team' ? t.careTeam : t.recommended;
 
+/** A typed target keeps the recommended one in view, with a warning when it is away from the usual values (plan 6.4). */
+function CustomNote({ target }: { target: TargetInfo }) {
+  if (target.origin !== 'custom') return null;
+  return (
+    <>
+      {target.recommended !== undefined ? (
+        <Text variant="caption" tone="muted">
+          {fill(t.recommendedValue, { value: fmtNum(target.recommended, target.unit) })}
+        </Text>
+      ) : null}
+      {target.warning ? (
+        <Text variant="small" tone="warning" testID={`target-warning-${target.nutrient}`}>
+          {target.warning}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+const customLabel = (target: TargetInfo) =>
+  target.origin !== 'custom'
+    ? ''
+    : `${target.recommended !== undefined ? ` ${fill(t.recommendedValue, { value: fmtNum(target.recommended, target.unit) })}.` : ''}${target.warning ? ` ${target.warning}` : ''}`;
+
 function TargetRow({
   target,
   label,
   sources,
   onReset,
+  onChange,
 }: {
   target: TargetInfo;
   label: string;
   sources: Record<string, SourceInfo>;
   onReset: () => void;
+  /** Opens the screen where a target is typed; missing where the person cannot type one. */
+  onChange?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const range =
@@ -66,7 +93,7 @@ function TargetRow({
         onPress={() => setOpen(o => !o)}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${label}, ${kind} ${fmtNum(target.value)} ${target.unit}${range}. ${originLabel(target.origin)}. Tap for how it is calculated.`}
+        accessibilityLabel={`${label}, ${kind} ${fmtNum(target.value)} ${target.unit}${range}. ${originLabel(target.origin)}.${customLabel(target)} Tap for how it is calculated.`}
         style={{ padding: space.lg, gap: space.xs }}
       >
         <View
@@ -99,6 +126,7 @@ function TargetRow({
             {range}
           </Text>
         </View>
+        <CustomNote target={target} />
       </Pressable>
       {open ? (
         <View
@@ -120,7 +148,12 @@ function TargetRow({
             </Text>
           ) : null}
           {sources[target.basis] ? <SourceLink source={sources[target.basis]!} /> : null}
-          {target.origin === 'custom' ? <Button label={t.reset} variant="soft" size="sm" onPress={onReset} /> : null}
+          {onChange || target.origin === 'custom' ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {onChange ? <Button label={t.change} icon={Pencil} variant="soft" size="sm" onPress={onChange} /> : null}
+              {target.origin === 'custom' ? <Button label={t.reset} variant="soft" size="sm" onPress={onReset} /> : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -158,6 +191,8 @@ export default function TargetsScreen() {
   };
 
   const energy = byNutrient.calories;
+  // Anyone with targets can type their own; a profile without personal targets types its care team's numbers instead (plan 6.7).
+  const canEdit = !!data && data.mode !== 'reference_only' && health.status === 'ready';
   const set = data?.targetSet;
   const referenceSet = set?.referenceSet ?? health.profile?.referenceSet ?? 'nasem';
   // A weight older than 90 days puts a quiet note on this screen; it never blocks anything (plan 7.7).
@@ -221,15 +256,23 @@ export default function TargetsScreen() {
                 {t.groups.energy}
               </Text>
               <Text variant="display" tabular>
-                {fmtNum(set.energy.target)}
+                {fmtNum(energy.value)}
                 <Text variant="body" tone="muted">
                   {' '}
                   kcal a day
                 </Text>
               </Text>
+              {energy.origin === 'custom' ? (
+                <View style={{ flexDirection: 'row', marginTop: space.xs }}>
+                  <Badge label={t.custom} tone="success" />
+                </View>
+              ) : null}
               <Text variant="small" tone="secondary" style={{ marginTop: space.xs }}>
                 {energy.how}
               </Text>
+              <View style={{ marginTop: space.xs, gap: space.xs }}>
+                <CustomNote target={energy} />
+              </View>
               <Text variant="caption" tone="muted" style={{ marginTop: space.sm }}>
                 {t.weightTrend}
               </Text>
@@ -239,6 +282,18 @@ export default function TargetsScreen() {
                 </Text>
               ) : null}
             </Card>
+          ) : null}
+
+          {canEdit ? (
+            <ListGroup>
+              <ListRow
+                testID="targets-edit"
+                icon={Pencil}
+                title={t.edit}
+                subtitle={t.editHint}
+                onPress={() => navigation.navigate('Goals')}
+              />
+            </ListGroup>
           ) : null}
 
           {GROUPS.map(g => {
@@ -255,6 +310,7 @@ export default function TargetsScreen() {
                       label={labels[row.nutrient] ?? row.nutrient}
                       sources={data.sources}
                       onReset={() => reset(row.nutrient)}
+                      onChange={canEdit ? () => navigation.navigate('Goals') : undefined}
                     />
                   ))}
                 </ListGroup>

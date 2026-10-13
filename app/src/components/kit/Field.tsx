@@ -181,6 +181,8 @@ export function InlineField({
   onChangeText,
   placeholder,
   error,
+  warning,
+  hint,
   keyboardType = 'decimal-pad',
   testID,
 }: {
@@ -190,6 +192,10 @@ export function InlineField({
   onChangeText: (v: string) => void;
   placeholder?: string;
   error?: string | null;
+  /** Said under the row without blocking anything, e.g. a number away from the usual values. */
+  warning?: string | null;
+  /** A quiet line under the row, e.g. the recommended value. */
+  hint?: string | null;
   keyboardType?: TextInputProps['keyboardType'];
   testID?: string;
 }) {
@@ -234,6 +240,20 @@ export function InlineField({
         <Text variant="small" tone="danger" style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
           {error}
         </Text>
+      ) : null}
+      {hint || (warning && !error) ? (
+        <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, gap: 2 }}>
+          {hint ? (
+            <Text variant="caption" tone="muted">
+              {hint}
+            </Text>
+          ) : null}
+          {warning && !error ? (
+            <Text variant="small" tone="warning" accessibilityLiveRegion="polite" testID={testID ? `${testID}-warning` : undefined}>
+              {warning}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
