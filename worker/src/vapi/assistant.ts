@@ -14,6 +14,7 @@ export const ASSISTANT_DEFAULTS = {
 } as const;
 
 export const SAVE_FOODS = 'save_foods';
+export const MARK_DAY_COMPLETE = 'mark_day_complete';
 const WEBHOOK_TIMEOUT_SECONDS = 20;
 
 export interface AssistantInput {
@@ -69,6 +70,23 @@ export function saveFoodsTool(webhookUrl: string | null) {
   };
 }
 
+/** Uses the same delivery path as meal saves, including the on-device bridge. */
+export function markDayCompleteTool(webhookUrl: string | null) {
+  return {
+    type: 'function',
+    async: webhookUrl === null,
+    function: {
+      name: MARK_DAY_COMPLETE,
+      description: 'Mark the call day complete only after an explicit yes to "Should I mark this day as complete?" Food read-back confirmation alone is not permission.',
+      parameters: {
+        type: 'object', required: ['confirmed'],
+        properties: { confirmed: { type: 'boolean', enum: [true] } },
+      },
+    },
+    ...(webhookUrl === null ? {} : { server: { url: webhookUrl, timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS } }),
+  };
+}
+
 /** Inline (transient) assistant for `vapi.start(assistant)` (PLAN.md §9.2). */
 export function buildAssistant(input: AssistantInput) {
   const plan = planMeals(input.localTime, input.alreadyLogged.map((i) => i.meal));
@@ -89,7 +107,7 @@ export function buildAssistant(input: AssistantInput) {
     model: {
       ...ASSISTANT_DEFAULTS.model,
       messages: [{ role: 'system', content: systemPrompt }],
-      tools: [saveFoodsTool(input.webhookUrl), { type: 'endCall' }],
+      tools: [saveFoodsTool(input.webhookUrl), markDayCompleteTool(input.webhookUrl), { type: 'endCall' }],
     },
     voice: { ...ASSISTANT_DEFAULTS.voice },
     transcriber: { ...ASSISTANT_DEFAULTS.transcriber },

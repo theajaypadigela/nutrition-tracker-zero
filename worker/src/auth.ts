@@ -47,10 +47,15 @@ export const PROFILE_SECRET_RE = /^[A-Za-z0-9_-]{43}$/;
  * Whether the request carries this profile's secret. It never throws and never reveals why not: a profile
  * with no secret yet, a missing header and a wrong secret all read as "locked" (plan 8.3.2).
  */
-export async function hasProfileSecret(req: Request, secretHash: string | null): Promise<boolean> {
+export async function hasProfileSecret(req: Request, secretHash: string | null, account?: { db: D1Database; userId: string }): Promise<boolean> {
   const given = req.headers.get(PROFILE_SECRET_HEADER);
-  if (!secretHash || !given || !PROFILE_SECRET_RE.test(given)) return false;
-  return safeEqual(await sha256Hex(given), secretHash);
+  if (!given || !PROFILE_SECRET_RE.test(given)) return false;
+  const hash = await sha256Hex(given);
+  // Keep existing installations signed in; a password login adds a credential rather than rotating theirs.
+  if (secretHash && await safeEqual(hash, secretHash)) return true;
+  if (!account) return false;
+  return !!await account.db.prepare('SELECT user_id FROM account_sessions WHERE token_hash = ?1 AND user_id = ?2')
+    .bind(hash, account.userId).first();
 }
 
 /**
@@ -58,9 +63,9 @@ export async function hasProfileSecret(req: Request, secretHash: string | null):
  * on what the request carried, never on whether the profile has a secret: no secret sent is `profile_secret_required`, and any secret
  * that does not unlock it is `profile_secret_invalid`, so a poller cannot tell a profile with no secret from one with a different one.
  */
-export async function requireProfileSecret(req: Request, secretHash: string | null): Promise<void> {
+export async function requireProfileSecret(req: Request, secretHash: string | null, account?: { db: D1Database; userId: string }): Promise<void> {
   if (!req.headers.get(PROFILE_SECRET_HEADER)) throw new HttpError(403, 'profile_secret_required', "This profile's secret is required.");
-  if (!(await hasProfileSecret(req, secretHash))) throw new HttpError(403, 'profile_secret_invalid', "That is not this profile's secret.");
+  if (!(await hasProfileSecret(req, secretHash, account))) throw new HttpError(403, 'profile_secret_invalid', "That is not this profile's secret.");
 }
 
 // ---- passwords (accounts: POST /auth/register, POST /auth/login)

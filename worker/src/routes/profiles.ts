@@ -38,7 +38,7 @@ export async function insertProfile(
 
   const id = crypto.randomUUID();
   const now = nowIso();
-  // The profile's own secret: shown once here, stored only as a hash (plan 8.3.2). It is also the recovery code.
+  // The profile's credential, stored only as a hash and kept automatically in the app's secure storage.
   const secret = randomToken();
   try {
     await env.DB.prepare(

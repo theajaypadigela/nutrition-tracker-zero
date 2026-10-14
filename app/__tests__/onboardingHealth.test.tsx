@@ -25,12 +25,12 @@ jest.mock('@/api/client', () => {
     }
   }
   const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
-  return { ApiError, errorMessage, setApiSecret: jest.fn(), api: { previewTargets: jest.fn(), saveHealthProfile: jest.fn(), claimSecret: jest.fn(), getHealthProfile: jest.fn(), meta: jest.fn() } };
+  return { ApiError, errorMessage, setApiSecret: jest.fn(), api: { previewTargets: jest.fn(), saveHealthProfile: jest.fn(), getHealthProfile: jest.fn(), meta: jest.fn() } };
 });
 jest.mock('@/state/ProfileContext', () => ({ useProfile: jest.fn() }));
 jest.mock('@/state/HealthContext', () => ({ useHealth: jest.fn() }));
 
-import { api, ApiError } from '@/api/client';
+import { api } from '@/api/client';
 import type { TargetSetInfo } from '@/api/types';
 import ActivityScreen from '@/screens/profile/ActivityScreen';
 import AboutYouScreen from '@/screens/profile/AboutYouScreen';
@@ -113,7 +113,7 @@ const ADULT: Partial<Draft> = { birthYear: String(new Date().getFullYear() - 35)
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useProfile as jest.Mock).mockReturnValue({ secret: 's'.repeat(43), adoptSecret: jest.fn() });
+  (useProfile as jest.Mock).mockReturnValue({ secret: 's'.repeat(43) });
   (useHealth as jest.Mock).mockReturnValue({ profile: null, apply: jest.fn(), refresh: jest.fn(), status: 'ready', mode: 'generic', numbersHidden: false });
 });
 
@@ -312,7 +312,7 @@ describe('step 4: the goal, and the pace (plan 4.3)', () => {
   });
 });
 
-describe('step 0: the notice and consent, and the secret (plan 3.5, 8.3.2)', () => {
+describe('step 0: the notice and consent, saved account details', () => {
   it('goes on only after the person says they have read what is stored', async () => {
     const tree = await render(<HealthIntroScreen />);
     expect(enabled(tree, 'intro-continue')).toBe(false);
@@ -321,37 +321,56 @@ describe('step 0: the notice and consent, and the secret (plan 3.5, 8.3.2)', () 
     expect(enabled(tree, 'intro-continue')).toBe(true);
   });
 
-  it('goes straight to the safety check when this phone has the secret', async () => {
+  it('goes straight to the safety check after account login', async () => {
     // The intro starts the flow afresh, so consent is given on the screen, not carried in.
     const tree = await render(<HealthIntroScreen />);
     await press(tree, 'intro-consent');
     await press(tree, 'intro-continue');
     await flush();
     expect(nav.navigate).toHaveBeenCalledWith('SafetyCheck');
-    expect(api_.claimSecret).not.toHaveBeenCalled();
   });
 
-  it('a profile made before secrets existed claims one, keeps it, and shows it once as a recovery code', async () => {
-    const adoptSecret = jest.fn();
-    (useProfile as jest.Mock).mockReturnValue({ secret: null, adoptSecret });
-    api_.claimSecret!.mockResolvedValue({ secret: 'c'.repeat(43) });
+  it('prefills saved personal details for editing and saves the revised values', async () => {
+    const apply = jest.fn();
+    const saved = { mode: 'personalised', birthYear: 1990, birthMonth: 3, sexForCalc: 'female', heightCm: 165, weightKg: 62, activity: 'low_active', goal: 'maintain' };
+    (useHealth as jest.Mock).mockReturnValue({ profile: saved, apply, status: 'ready', mode: 'personalised' });
     const tree = await render(<HealthIntroScreen />);
-    await press(tree, 'intro-consent');
-    await press(tree, 'intro-continue');
+    expect(texts(tree)).toContain('Edit personal details');
+    expect(current.draft).toMatchObject({ birthYear: '1990', birthMonth: 3, height: { cm: '165' }, weight: { kg: '62' }, activity: 'low_active' });
+    await act(async () => { current.update({ birthYear: '1991', birthMonth: null, weight: { ...current.draft.weight, kg: '64' } }); });
+    const edited = current.draft;
+    api_.previewTargets!.mockResolvedValue(set());
+    const response = { profile: { ...saved, birthYear: 1991, birthMonth: undefined, weightKg: 64 }, targetSet: set() };
+    api_.saveHealthProfile!.mockResolvedValue(response);
+    const review = await render(<ReviewScreen />, edited);
     await flush();
-    expect(adoptSecret).toHaveBeenCalledWith('c'.repeat(43), { show: true });
-    expect(nav.navigate).toHaveBeenCalledWith('RecoveryCode');
+    await press(review, 'review-save');
+    expect(api_.saveHealthProfile).toHaveBeenCalledWith(expect.objectContaining({ profile: expect.objectContaining({ birthYear: 1991, birthMonth: null, heightCm: 165, weightKg: 64 }) }));
+    expect(apply).toHaveBeenCalledWith(response);
+  });
+
+  it('asks for password login when the saved credential is missing', async () => {
+    (useHealth as jest.Mock).mockReturnValue({ status: 'locked', profile: null });
+    const tree = await render(<HealthIntroScreen />);
+    expect(texts(tree)).toContain('Log in again to load your saved personal targets.');
+    const button = tree.root.findAll(n => n.props.label === 'Log in again' && typeof n.props.onPress === 'function')[0]!;
+    await act(async () => { button.props.onPress(); });
+    expect(nav.navigate).toHaveBeenCalledWith('Reauthenticate');
     expect(nav.navigate).not.toHaveBeenCalledWith('SafetyCheck');
   });
 
-  it('a profile that already has a secret (a new phone) asks for the recovery code instead', async () => {
-    (useProfile as jest.Mock).mockReturnValue({ secret: null, adoptSecret: jest.fn() });
-    api_.claimSecret!.mockRejectedValue(new ApiError(409, 'secret_already_set', 'already'));
+  it('waits for saved settings before seeding an edit, then preserves changes during refresh', async () => {
+    (useHealth as jest.Mock).mockReturnValue({ status: 'loading', profile: null });
     const tree = await render(<HealthIntroScreen />);
-    await press(tree, 'intro-consent');
-    await press(tree, 'intro-continue');
-    await flush();
-    expect(nav.navigate).toHaveBeenCalledWith('RecoveryEntry');
+    expect(tree.root.findAll(n => n.props.testID === 'intro-continue')).toHaveLength(0);
+    const saved = { mode: 'personalised', birthYear: 1990, heightCm: 165, weightKg: 62, activity: 'low_active', pattern: 'vegan', referenceSet: 'icmr_nin' };
+    (useHealth as jest.Mock).mockReturnValue({ status: 'ready', profile: saved });
+    await act(async () => { tree.update(<ThemeProvider><HealthDraftProvider><Probe /><HealthIntroScreen /></HealthDraftProvider></ThemeProvider>); });
+    expect(current.draft).toMatchObject({ birthYear: '1990', weight: { kg: '62' }, pattern: 'vegan', referenceSet: 'icmr_nin' });
+    await act(async () => { current.update({ birthYear: '1991' }); });
+    (useHealth as jest.Mock).mockReturnValue({ status: 'ready', profile: { ...saved } });
+    await act(async () => { tree.update(<ThemeProvider><HealthDraftProvider><Probe /><HealthIntroScreen /></HealthDraftProvider></ThemeProvider>); });
+    expect(current.draft.birthYear).toBe('1991');
   });
 
   it('starts an edit from the answers already given', async () => {

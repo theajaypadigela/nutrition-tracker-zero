@@ -14,9 +14,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    // Start PushKit before React Native. A VoIP push can cold-launch the process, and iOS requires
-    // its callback to report a CallKit incoming call promptly even while the JS bundle is loading.
-    IncomingCallBootstrap.startPushKit()
+    NativeCallScheduler.shared.install()
+    // The default reminders are local and need no paid Apple push credentials. Preserve the
+    // optional VoIP receiver for an explicitly configured future server/push deployment.
+    if Bundle.main.object(forInfoDictionaryKey: "EnableRemoteVoIP") as? Bool == true {
+      IncomingCallBootstrap.startPushKit()
+    }
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)

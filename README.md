@@ -1,5 +1,7 @@
 # Nutrition Tracker Zero
 
+**Voice integration:** Deepgram is now the default provider through a common voice interface. The complete Vapi implementation remains available as an alternative. See [Voice providers](docs/VOICE_PROVIDERS.md) for setup, switching, architecture and verification. The Vapi-specific sections below document the preserved implementation.
+
 A daily voice food log for a few friends, running on free tiers only. At each person's call time their
 phone rings **inside the app** (a full-screen call, like a normal phone call). Answering starts a
 **Vapi web call**. The assistant asks what they ate, reads the list back, and saves it through a
@@ -168,15 +170,13 @@ official book**; do that before relying on them (the plan's section 11.7).
 
 **This is health data, so the old "friends-only, non-sensitive" assumption no longer holds for it.**
 
-- **A per-profile secret.** Creating a profile returns a 256-bit secret once; the Worker stores only its SHA-256. The app keeps it in
-  the Keychain / Keystore (`react-native-keychain`, which needs a native rebuild) and sends it as `X-Profile-Secret`. Every health
-  route and the weekly report refuse the shared token alone. The secret is shown once as a **recovery code**; a new phone or a
-  reinstall asks for it, and losing it makes the health data unreachable (the person starts a new profile; the food log is unaffected).
-  Profiles made before this change claim a secret with `POST /me/secret` (whoever claims first wins, so ask friends to update and
-  open the app soon). If one was claimed by the wrong person, or a secret is exposed, **issue the person a new code** as in
-  [docs/BREACH_RUNBOOK.md](docs/BREACH_RUNBOOK.md). Never set `secret_hash` to NULL: that reopens the claim to anyone holding the
-  shared token. A profile with a secret also needs it to change its daily targets and to read its weekly report (whether or not it
-  has a health profile, so the answer never says which); care-team numbers are not shown without it.
+- **Account access.** Registration and username/password login return a 256-bit credential that the app stores automatically in
+  Keychain / Keystore and sends as `X-Profile-Secret`. The Worker stores only credential hashes. Login adds a session in
+  `account_sessions` without invalidating existing phones or changing saved health data. Every health route and the weekly report
+  still refuse the shared app token alone. Existing installations keep using their stored credentials. No recovery code is shown
+  or required: if secure storage is missing or stale, **Log in again** restores access with the account password. Credentials persist
+  until the account is deleted or the deployment owner revokes them; there is no automatic expiry. The old `POST /me/secret` claim
+  remains only for API compatibility and is no longer called by the app.
 - **Nothing health-related leaves the Worker.** The voice assistant's prompt, first message and metadata never contain any of it (a canary
   test enforces this), no log line carries a profile field or a request body, and there are no analytics or advertising SDKs. The call
   itself still goes to Vapi and the providers it uses: set Vapi's **Zero Data Retention** on each account.
@@ -194,7 +194,7 @@ official book**; do that before relying on them (the plan's section 11.7).
 | `NUTRIENT_SCORE` = `1` | The weekly report shows the **Nutrient mix** score. Off by default: the report leads with the days that count, what was logged on average, what stood out and what is missing, because a score looks surer than incomplete food data allows | Once the foods people eat most have their mineral and sodium values (the **Foods with gaps** list in the Pending tab, and the report's "What is missing" card, show how far that is) |
 | `SCORE_MODERATION` = `1` | Saturated fat and added sugars join the Nutrient mix (75 points instead of 55) | Once the foods people eat have values for both, which the **Foods with gaps** list in the Pending tab helps with. Until then every score would be withheld for thin data |
 | `CALIBRATION` = `1` | An **experimental** suggestion of maintenance energy from four weeks of logs and the weight trend. Never applied to a target; nothing validates it | Only if you want to look at it |
-| `REQUIRE_SECRET` = `1` | Every profile route, not only the health ones, needs the profile's secret. A profile that still has none is **locked**, and can no longer claim one (anyone holding the shared token could claim it first): issue it a code as in the breach runbook | After every friend has updated the app and claimed a secret. The voice webhook has its own token and is not affected |
+| `REQUIRE_SECRET` = `1` | Every profile route, not only the health ones, needs a stored account credential. Password login grants it automatically; existing credentials also work | After every friend has updated and logged in. The voice webhook has its own token and is not affected |
 
 **Not done, and why it matters.** The plan's expert reviews are not something code can do: a dietitian reading the gate matrix, the
 floors, caps and every string; a reader with eating-disorder expertise for low-pressure mode and the safety wording; a privacy and legal
@@ -287,8 +287,18 @@ The app id is `com.nutritiontrackerzero`, so it installs next to the old app.
 ### iOS (your own phone)
 
 `cd ios && pod install`, open `habit_builder_app.xcworkspace` in Xcode, choose your personal team, and run.
-Free Apple IDs expire apps after 7 days, and PushKit/APNs needs the paid program, so iOS rings via a
-time-sensitive local notification plus CallKit while the app is in the foreground.
+Free Apple IDs expire apps after 7 days. Daily reminders use a native repeating calendar notification,
+with a sound and an **Answer** action that opens the voice call, including after the app is swiped away.
+The selected profile time zone is preserved across DST. No APNs, paid notification entitlement, or
+server scheduler is needed. Enable notifications, sounds and immediate delivery; Focus, silent mode
+and Scheduled Summary can silence or postpone ordinary notifications. The optional existing VoIP
+receiver is disabled unless `EnableRemoteVoIP` is explicitly enabled in Info.plist.
+
+Rebuild/install the native app after this scheduling update, then open it once to migrate the saved
+schedule. Android needs **Alarms & reminders**, notifications, and (for the full-screen surface)
+full-screen-intent access; **Reminder health** shows the required settings. Swiping away the app is
+supported. Android **Force stop** deliberately cancels alarms: reopen the app to restore them.
+See [docs/REMINDER_DELIVERY.md](docs/REMINDER_DELIVERY.md) for the root cause and device checks.
 
 ### Tests
 
@@ -345,8 +355,12 @@ dialogs and pickers follow it (`src/theme/`).
 
 ### How the daily call works
 
-- **Arming.** A Notifee alarm (exact `SET_ALARM_CLOCK` when allowed) fires at the call time in the
-  profile's time zone. Its headless handler asks the native `IncomingCall` service to ring full screen.
+- **Arming.** Android stores the schedule natively and arms an exact `AlarmManager.setAlarmClock`
+  one-shot (when permitted). The native receiver starts `IncomingCallService` directly, with no JS
+  delivery callback. It computes and arms tomorrow in the profile's time zone before ringing today.
+  Native recovery restores the alarm after reboot, app update, clock changes and an exact-alarm grant.
+  iOS stores an OS-managed repeating `UNCalendarNotificationTrigger` with an explicit time zone;
+  the system plays the sound while the app is closed, and tapping opens the voice call.
 - **Answer.** Opens the call screen, which runs `POST /calls/start`, then `vapi.start(assistant)`, then
   `POST /calls/:id/started`.
 - **On the call, like a phone call.** The call opens on the earpiece (or a connected headset), not the loudspeaker: Daily,
@@ -361,10 +375,25 @@ dialogs and pickers follow it (`src/theme/`).
 - **No answer after 60 s.** A missed-call notification appears with **Log now** and **Snooze (10 min)**.
   A scheduled call also re-rings **once** 60 min later; the native side schedules this, so it works with
   the app killed. Snooze replaces that retry. A decline never retries.
-- **Recovery.** Every launch and resume re-arms from the cached schedule. Settings has **Send test call
-  now** and **Reminder health**.
+- **Recovery.** Launch/resume synchronizes the cached schedule to native scheduling, migrates old
+  Notifee heartbeat triggers, and consumes native answer/miss markers. Disabling calls/signing out
+  cancels native daily alarms and retry/snooze alarms. **Send test call now** uses the same native
+  delivery path. Reminder delivery has no service fees and does not call an AI provider until answered.
 
 ---
+
+Saved personal details are loaded before the edit form is initialized. Saving or reloading health settings refreshes the target
+views, daily summary and weekly reports through `HealthContext`; the Worker remains the source of effective targets. Custom targets
+still override calculated recommendations, and historical reports keep using the target versions that were in force on each day.
+
+For this update, hosted deployments must apply migration `0007_account_sessions.sql` before deploying the Worker, then install the
+updated app. On-device databases apply the bundled migration automatically at launch. Existing account passwords and health rows
+are unchanged; a signed-in installation with a missing credential uses **Log in again**.
+
+After a hosted update, run `node worker/scripts/check-personal-settings.mjs` from the repository root to check the actual login,
+setup, edit and target contract. It creates and deletes a disposable test account and prints no credentials. The app verifies that
+login grants access to personal settings before accepting the account; an outdated server response stays on Login with an error
+instead of returning to another login prompt.
 
 ## Deploy (Phase 5)
 
@@ -395,8 +424,9 @@ reads and 100k row writes/day) are far above what this app uses.
    (The free $5 credit lasts roughly 2–3 weeks of daily ~3 min calls; after that Vapi asks them for a card.)
 2. Install the APK. **Create an account** (a username and a password of 8+ characters; there is no password reset, so pick one they will remember), set a call time, and allow notifications, exact alarms and full-screen calls.
 3. Settings (tap your initials, top right) → paste the Vapi key → **Send test call now**.
-4. Optional: **Make your targets personal** (Report tab). The app shows a **recovery code** once; keep it in a password manager, because
-   it unlocks the profile's health data on a new phone. Use Vapi's Zero Data Retention setting on their account if they want calls not stored.
+4. Optional: **Make your targets personal** (Report tab). Save the details to apply the calculated targets throughout the app.
+   Log in with the same account to reopen saved details. In on-device mode the database stays on that phone; login does not move it
+   to another phone. Use Vapi's Zero Data Retention setting on their account if they want calls not stored.
 
 ---
 
@@ -440,11 +470,10 @@ first. Re-running the import is safe.
   iterations (1,000 inside the app, `ON_DEVICE`), far below the 600,000 OWASP now asks for: Cloudflare's free plan allows 10 ms of CPU
   per request and 100,000 iterations already take about 8 ms on a fast laptop. The count is stored in each hash (`worker/src/auth.ts`), so
   raising it later leaves existing passwords working. What is **not** there: a password reset or change (nothing can send an email, so a
-  forgotten password cannot be recovered), rate limiting or lockout of wrong guesses, and a session. A login returns the profile's id,
+  forgotten password cannot be recovered), rate limiting or lockout of wrong guesses, and automatic session expiry. A login returns a securely stored credential and the profile's id,
   which the app keeps and sends as `X-User-Id`, exactly as before, so the shared `APP_TOKEN` plus a profile's id still reach that profile's
   food log. `GET/POST /profiles` are still open to the shared token (the app no longer calls them): `GET` lists every username, and `POST`
-  makes a profile with no password. A profile made before accounts has no password and cannot log in once logged out. Health data keeps
-  its own secret on top (the recovery code), which a login does not replace: on a new phone the recovery code is still asked for.
+  makes a profile with no password. A profile made before accounts has no password and cannot log in once logged out. Health data uses the credential granted automatically by password login; no separate code is required.
 - **The weekly report is an estimate of what was logged.** Logged intake usually runs low, so the report says "at least" where a value
   is missing, leaves out days that look incomplete, and (where the score is switched on) withholds the Nutrient mix on thin data. It is not
   medical advice. On the India set the Nutrient mix still measures sodium and the moderation parts against the Healthy Eating Index-2020

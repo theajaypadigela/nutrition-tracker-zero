@@ -47,12 +47,13 @@ export default function TodayScreen() {
     if (requested && requested <= today) setDate(requested);
   }, [requested, today]);
 
-  const day = useAsync(() => api.getDay(shown), [shown]);
+  const day = useAsync(() => api.getDay(shown), [shown, health.revision]);
   useFocusEffect(
     useCallback(() => {
       day.reload();
+      health.refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shown]),
+    }, [shown, health.refresh]),
   );
 
   const units = useMemo(() => Object.fromEntries(meta.nutrients.map(n => [n.key, n.unit])), [meta]);

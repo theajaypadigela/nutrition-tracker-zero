@@ -84,7 +84,7 @@ describe('the strings table', () => {
       expect(hosted.storedBody).toMatch(/on our server/);
       expect(onPhone.storedBody).toMatch(/on this phone only/);
       expect(onPhone.storedBody).not.toMatch(/server/i);
-      expect(onPhone.recoveryBody).not.toMatch(/new phone|reinstall|server/i);
+      expect([hosted.storedBody, onPhone.storedBody].join(' ')).toMatch(/account login/);
       expect(onPhone.switchProfile).not.toMatch(/server/i);
     });
 

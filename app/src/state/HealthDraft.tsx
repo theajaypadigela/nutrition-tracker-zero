@@ -115,7 +115,7 @@ export function profileInputOf(d: Draft): ProfileInput {
   const by = birthYearOf(d);
   return {
     ...(by !== null ? { birthYear: by } : {}),
-    ...(d.birthMonth !== null ? { birthMonth: d.birthMonth } : {}),
+    ...(by !== null || d.birthMonth !== null ? { birthMonth: d.birthMonth } : {}),
     ...(d.sex ? { sexForCalc: d.sex } : {}),
     ...(h !== null ? { heightCm: Math.round(h * 10) / 10 } : {}),
     ...(w !== null ? { weightKg: Math.round(w * 10) / 10 } : {}),

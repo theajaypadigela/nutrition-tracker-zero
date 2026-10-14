@@ -28,7 +28,7 @@ export default function GoalsScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'Goals'>>();
   const health = useHealth();
-  const goals = useAsync(() => api.getGoals(), [health.mode, health.status]);
+  const goals = useAsync(() => api.getGoals(), [health.mode, health.status, health.revision]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export default function GoalsScreen() {
     setError(null);
     try {
       await api.updateGoals(patch, careTeam ? 'care_team' : 'custom');
-      health.refresh();
+      await health.refresh();
       // Saved: close the screen. Any warning was shown while typing and stays next to the target on the targets screen.
       if (navigation.canGoBack()) navigation.goBack();
     } catch (e) {

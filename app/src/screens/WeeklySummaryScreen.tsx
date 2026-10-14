@@ -145,7 +145,7 @@ export default function WeeklySummaryScreen() {
       {range.locked ? (
         <Notice
           tone="info"
-          action={{ label: strings.report.unlock, onPress: () => navigation.navigate('RecoveryEntry') }}
+          action={{ label: strings.report.unlock, onPress: () => navigation.navigate('Reauthenticate') }}
         >
           {strings.report.locked}
         </Notice>

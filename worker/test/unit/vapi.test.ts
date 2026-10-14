@@ -88,7 +88,9 @@ describe('buildAssistant', () => {
     expect(prompt).toContain('wish them a nice dinner');
   });
   it('has endCall, no recording, metadata, 10 min cap', () => {
-    expect(a.model.tools[1]).toEqual({ type: 'endCall' });
+    expect(a.model.tools[1]).toMatchObject({ function: { name: 'mark_day_complete', parameters: { required: ['confirmed'] } } });
+    expect(a.model.tools[2]).toEqual({ type: 'endCall' });
+    expect(a.model.messages[0]!.content).toContain('Should I mark this day as complete?');
     expect(a.artifactPlan.recordingEnabled).toBe(false);
     expect(a.metadata).toEqual({ userId: 'u1', localDate: '2026-10-04', callRowId: 7 });
     expect(a.maxDurationSeconds).toBe(600);

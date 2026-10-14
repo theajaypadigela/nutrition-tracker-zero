@@ -4,7 +4,8 @@ import { insertItemsStatement, loadIndex, type CallRow, type UserRow } from '../
 import { parseItemList, prepareItems } from '../domain/items';
 import type { FoodIndex } from '../domain/match';
 import { isValidDate, localDateIn } from '../domain/time';
-import { SAVE_FOODS } from './assistant';
+import { markConfirmedDay } from '../voice/save';
+import { MARK_DAY_COMPLETE, SAVE_FOODS } from './assistant';
 import {
   callIdOf,
   endOfCallReportOf,
@@ -20,7 +21,8 @@ const MAX_BODY = 2 * 1024 * 1024;
 
 interface Processed {
   id: string;
-  n: number;
+  n?: number;
+  result?: string;
 }
 
 type Msg = Record<string, unknown>;
@@ -73,7 +75,7 @@ async function handleToolCalls(db: D1Database, user: UserRow, call: CallRow | nu
   let index: FoodIndex | null = null;
 
   for (const tc of toolCallsOf(msg)) {
-    if (tc.name !== SAVE_FOODS) {
+    if (tc.name !== SAVE_FOODS && tc.name !== MARK_DAY_COMPLETE) {
       results.push({ name: tc.name, toolCallId: tc.id, error: `Unknown tool ${tc.name}.` });
       continue;
     }
@@ -85,10 +87,26 @@ async function handleToolCalls(db: D1Database, user: UserRow, call: CallRow | nu
     if (prior) {
       // Redelivery: change nothing, answer the same.
       log({ type: 'tool-calls', callRowId: call.id, outcome: 'duplicate' });
-      results.push({ name: tc.name, toolCallId: tc.id, result: saved(prior.n) });
+      results.push({ name: tc.name, toolCallId: tc.id, result: prior.result ?? saved(prior.n!) });
       continue;
     }
     const args = parseArguments(tc.arguments);
+    if (tc.name === MARK_DAY_COMPLETE) {
+      if (args?.confirmed !== true) {
+        results.push({ name: tc.name, toolCallId: tc.id, error: 'Ask whether to mark the day complete and wait for an explicit yes before retrying.' });
+        continue;
+      }
+      // A previous tool in the same message may have changed the deduplication state.
+      const fresh = await db.prepare('SELECT * FROM calls WHERE id = ?1 AND user_id = ?2').bind(call.id, user.id).first<CallRow>();
+      try {
+        const result = await markConfirmedDay(db, user.id, fresh ?? call, tc.id);
+        processed.push({ id: tc.id, result });
+        results.push({ name: tc.name, toolCallId: tc.id, result });
+      } catch {
+        results.push({ name: tc.name, toolCallId: tc.id, error: 'The day could not be marked complete. Please retry or mark it in Today.' });
+      }
+      continue;
+    }
     const parsed = parseItemList(args?.items);
     if ('error' in parsed) {
       log({ type: 'tool-calls', callRowId: call.id, outcome: 'invalid' });

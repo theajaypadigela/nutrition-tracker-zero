@@ -21,6 +21,7 @@ import notifee, {
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
 import { reminderLog } from './logger';
+import { readNativeReminderDiagnostics, type NativeReminderDiagnostics } from './native';
 
 export type ExactAlarmState = 'granted' | 'denied' | 'not-applicable';
 
@@ -37,6 +38,7 @@ export type PermissionSnapshot = {
   batteryOptimizationEnabled: boolean;
   /** True if the device has a known OEM power-manager (autostart) screen we can deep-link. */
   oemPowerManagerAvailable: boolean;
+  native: NativeReminderDiagnostics | null;
 };
 
 export async function requestCorePermissions(): Promise<PermissionSnapshot> {
@@ -48,7 +50,7 @@ export async function readPermissionSnapshot(): Promise<PermissionSnapshot> {
   const settings = await notifee.getNotificationSettings();
 
   const authorizationStatus = settings.authorizationStatus;
-  const notificationsAuthorized =
+  let notificationsAuthorized =
     authorizationStatus === AuthorizationStatus.AUTHORIZED ||
     authorizationStatus === AuthorizationStatus.PROVISIONAL;
   const provisional = authorizationStatus === AuthorizationStatus.PROVISIONAL;
@@ -56,8 +58,10 @@ export async function readPermissionSnapshot(): Promise<PermissionSnapshot> {
   let exactAlarm: ExactAlarmState = 'not-applicable';
   let batteryOptimizationEnabled = false;
   let oemPowerManagerAvailable = false;
+  let native: NativeReminderDiagnostics | null = null;
 
   if (Platform.OS === 'android') {
+    native = await readNativeReminderDiagnostics();
     switch (settings.android.alarm) {
       case AndroidNotificationSetting.ENABLED:
         exactAlarm = 'granted';
@@ -68,6 +72,12 @@ export async function readPermissionSnapshot(): Promise<PermissionSnapshot> {
       default:
         // NOT_SUPPORTED => API < 31, no restriction => effectively granted.
         exactAlarm = 'not-applicable';
+    }
+    // Read the same AlarmManager capability the native scheduler actually uses. Older
+    // notification-library binaries can omit the alarm setting on newer Android versions.
+    if (native) {
+      exactAlarm = native.exactAlarmAllowed ? 'granted' : 'denied';
+      notificationsAuthorized = notificationsAuthorized && native.notificationsEnabled;
     }
 
     try {
@@ -95,6 +105,7 @@ export async function readPermissionSnapshot(): Promise<PermissionSnapshot> {
     exactAlarm,
     batteryOptimizationEnabled,
     oemPowerManagerAvailable,
+    native,
   };
 
   if (!notificationsAuthorized) {
@@ -119,8 +130,8 @@ export async function readPermissionSnapshot(): Promise<PermissionSnapshot> {
 }
 
 /**
- * Whether the system will deliver an exact, on-time alarm. When false, the scheduler
- * uses inexact triggers and the UI shows "reminders may be a few minutes late".
+ * Whether Android permits an exact alarm. OS scheduling/processing latency still applies.
+ * When false, native scheduling uses inexact alarms and Reminder health explains the gap.
  */
 export function canScheduleExact(snapshot: PermissionSnapshot): boolean {
   return snapshot.exactAlarm !== 'denied';

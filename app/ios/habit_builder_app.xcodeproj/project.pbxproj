@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EA1100012E01D4A700AB17E5 /* NativeCallScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1101012E01D4A700AB17E5 /* NativeCallScheduler.swift */; };
 		0C80B921A6F3F58F76C31292 /* libPods-habit_builder_app.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-habit_builder_app.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
@@ -16,9 +17,12 @@
 		CA1100032E01D4A700AB17E5 /* IncomingCallStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1101032E01D4A700AB17E5 /* IncomingCallStore.swift */; };
 		CA1100042E01D4A700AB17E5 /* IncomingCallBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = CA1101042E01D4A700AB17E5 /* IncomingCallBridge.m */; };
 		DD9D7FBCE2D87E0117A24E8D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		DA1100012E01D4A700AB17E5 /* VoicePcmModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA1101012E01D4A700AB17E5 /* VoicePcmModule.swift */; };
+		DA1100022E01D4A700AB17E5 /* VoicePcmBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = DA1101022E01D4A700AB17E5 /* VoicePcmBridge.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		EA1101012E01D4A700AB17E5 /* NativeCallScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeCallScheduler.swift; path = habit_builder_app/NativeCallScheduler.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* habit_builder_app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = habit_builder_app.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = habit_builder_app/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = habit_builder_app/Info.plist; sourceTree = "<group>"; };
@@ -34,6 +38,8 @@
 		CA1101042E01D4A700AB17E5 /* IncomingCallBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = IncomingCallBridge.m; path = habit_builder_app/IncomingCallBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F1A2B3C42E01D4A700AB17E5 /* habit_builder_app.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = habit_builder_app.entitlements; path = habit_builder_app/habit_builder_app.entitlements; sourceTree = "<group>"; };
+		DA1101012E01D4A700AB17E5 /* VoicePcmModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoicePcmModule.swift; path = habit_builder_app/VoicePcmModule.swift; sourceTree = "<group>"; };
+		DA1101022E01D4A700AB17E5 /* VoicePcmBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VoicePcmBridge.m; path = habit_builder_app/VoicePcmBridge.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,8 +57,11 @@
 		13B07FAE1A68108700A75B9A /* habit_builder_app */ = {
 			isa = PBXGroup;
 			children = (
+				DA1101012E01D4A700AB17E5 /* VoicePcmModule.swift */,
+				DA1101022E01D4A700AB17E5 /* VoicePcmBridge.m */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				EA1101012E01D4A700AB17E5 /* NativeCallScheduler.swift */,
 				CA1101012E01D4A700AB17E5 /* IncomingCallModule.swift */,
 				CA1101022E01D4A700AB17E5 /* IncomingCallPayload.swift */,
 				CA1101032E01D4A700AB17E5 /* IncomingCallStore.swift */,
@@ -148,9 +157,6 @@
 						LastSwiftMigration = 1120;
 						SystemCapabilities = {
 							com.apple.BackgroundModes = {
-								enabled = 1;
-							};
-							com.apple.Push = {
 								enabled = 1;
 							};
 						};
@@ -268,7 +274,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DA1100012E01D4A700AB17E5 /* VoicePcmModule.swift in Sources */,
+				DA1100022E01D4A700AB17E5 /* VoicePcmBridge.m in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				EA1100012E01D4A700AB17E5 /* NativeCallScheduler.swift in Sources */,
 				CA1100012E01D4A700AB17E5 /* IncomingCallModule.swift in Sources */,
 				CA1100022E01D4A700AB17E5 /* IncomingCallPayload.swift in Sources */,
 				CA1100032E01D4A700AB17E5 /* IncomingCallStore.swift in Sources */,

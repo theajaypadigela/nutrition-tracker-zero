@@ -10,10 +10,10 @@ import { useProfile } from '@/state/ProfileContext';
 import { space } from '@/theme';
 
 /** Log in with the username and password made on the create account screen. */
-export default function LoginScreen() {
+export default function LoginScreen({ reauthenticate = false }: { reauthenticate?: boolean } = {}) {
   const navigation = useNavigation();
-  const { selectProfile } = useProfile();
-  const [username, setUsername] = useState('');
+  const { profile, selectProfile } = useProfile();
+  const [username, setUsername] = useState(reauthenticate ? profile?.name ?? '' : '');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,9 @@ export default function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
-      await selectProfile(await api.login(username.trim(), password));
+      const loggedIn = await api.login(username.trim(), password);
+      await selectProfile(loggedIn.profile, { secret: loggedIn.secret });
+      if (reauthenticate) navigation.goBack();
     } catch (e) {
       setError(e instanceof ApiError && e.code === 'invalid_credentials' ? 'Wrong username or password.' : errorMessage(e));
     } finally {
@@ -34,10 +36,10 @@ export default function LoginScreen() {
 
   return (
     <AuthLayout
-      title="Welcome back"
-      subtitle="Log in to see what you've logged."
+      title={reauthenticate ? 'Log in again' : 'Welcome back'}
+      subtitle={reauthenticate ? 'Log in to load your saved personal settings and targets.' : "Log in to see what you've logged."}
       footer={
-        <Button
+        reauthenticate ? <Button label="Back" variant="ghost" fullWidth onPress={() => navigation.goBack()} /> : <Button
           testID="go-register"
           label="New here? Create an account"
           variant="ghost"
@@ -59,6 +61,7 @@ export default function LoginScreen() {
             icon={User}
             value={username}
             onChangeText={setUsername}
+            editable={!reauthenticate}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="username"
@@ -78,4 +81,9 @@ export default function LoginScreen() {
       </Card>
     </AuthLayout>
   );
+}
+
+/** Restore access when a previous install has no saved credential; the profile's data stays intact. */
+export function ReauthenticateScreen() {
+  return <LoginScreen reauthenticate />;
 }

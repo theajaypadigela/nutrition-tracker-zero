@@ -42,6 +42,8 @@ export interface Profile {
 
 export interface CallInfo {
   id: number;
+  provider?: string;
+  providerCallId?: string | null;
   vapiCallId: string | null;
   localDate: string;
   kind: CallKind | 'unknown';
@@ -659,4 +661,19 @@ export interface WeeklyReport {
   /** Oldest first, ending with the reported week. */
   history: HistoryWeek[];
   disclaimerId: string;
+}
+
+/** Inclusive recorded-intake totals; missing food values are unknown, never zero. */
+export interface RangeReport {
+  range: { from: string; to: string; through: string };
+  display: { numbersHidden: boolean };
+  coverage: { calendarDays: number; loggedDays: number; skippedDays: number; itemCount: number; pendingItems: number };
+  nutrients: {
+    nutrient: string;
+    total: number | null;
+    meanPerLoggedDay: number | null;
+    knownItems: number;
+    missingItems: number;
+    isLowerBound: boolean;
+  }[];
 }

@@ -30,8 +30,7 @@ export type RootStackParamList = {
   /** One nutrient over its window; `window` is `four_weeks` for a vitamin judged over four weeks. */
   Nutrient: { key: string; start: string; window?: 'week' | 'four_weeks' };
   // ---- personal targets (WEEKLY_BREAKDOWN_PLAN.md 3.5, 9.4)
-  RecoveryCode: undefined;
-  RecoveryEntry: undefined;
+  Reauthenticate: undefined;
   HealthIntro: undefined;
   SafetyCheck: undefined;
   AboutYou: undefined;

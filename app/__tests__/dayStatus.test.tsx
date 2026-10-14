@@ -134,6 +134,18 @@ describe('the Today screen', () => {
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
 
+  it('replaces the generic protein target with the saved personal target when health settings change', async () => {
+    (useHealth as jest.Mock).mockReturnValue({ mode: 'generic', numbersHidden: false, status: 'ready', revision: 1 });
+    api_.getDay.mockResolvedValue({ ...day('2026-10-11'), goals: { calories: 2000, protein: 50 } });
+    const tree = await render(<TodayScreen />);
+    expect(all(tree)).toContain('of 50 g');
+    (useHealth as jest.Mock).mockReturnValue({ mode: 'personalised', numbersHidden: false, status: 'ready', revision: 2 });
+    api_.getDay.mockResolvedValue({ ...day('2026-10-11'), goals: { calories: 2400, protein: 89 } });
+    await act(async () => { tree.update(<ThemeProvider><TodayScreen /></ThemeProvider>); });
+    expect(all(tree)).toContain('of 89 g');
+    expect(all(tree)).not.toContain('of 50 g');
+  });
+
   it('has an entry point to mark the day, whatever the mode', async () => {
     const tree = await render(<TodayScreen />);
     expect(all(tree)).toContain('Mark this day');

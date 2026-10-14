@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
@@ -51,6 +53,24 @@ object CallNotificationBuilder {
     nm.notify(CallConstants.NOTIFICATION_ID, build(context, payload))
   }
 
+  /** If the OS denies the service, nobody is playing Ringer. Use an AUDIBLE channel instead
+   * of the normal silent service channel, and expire it rather than leaving an ongoing ghost. */
+  fun postFallback(context: Context, payload: IncomingCallPayload) {
+    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      nm.createNotificationChannel(NotificationChannel(CallConstants.FALLBACK_CHANNEL_ID,
+        "Call reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+        description = "Audible reminder when the phone blocks the ringing service"
+        setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
+        enableVibration(true)
+        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+      })
+    }
+    nm.notify(CallConstants.NOTIFICATION_ID, build(context, payload, CallConstants.FALLBACK_CHANNEL_ID))
+    ReminderDiagnostics.record(context, "audible_fallback_posted")
+  }
+
   fun cancel(context: Context) {
     val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     nm.cancel(CallConstants.NOTIFICATION_ID)
@@ -62,7 +82,8 @@ object CallNotificationBuilder {
     return build(context, payload)
   }
 
-  private fun build(context: Context, payload: IncomingCallPayload): Notification {
+  private fun build(context: Context, payload: IncomingCallPayload,
+    channelId: String = CallConstants.NOTIFICATION_CHANNEL_ID): Notification {
     val person =
       Person.Builder()
         .setName(payload.assistantName)
@@ -108,7 +129,7 @@ object CallNotificationBuilder {
       )
 
     val builder =
-      NotificationCompat.Builder(context, CallConstants.NOTIFICATION_CHANNEL_ID)
+      NotificationCompat.Builder(context, channelId)
         .setSmallIcon(R.drawable.ic_call_small)
         .setContentTitle(payload.assistantName)
         .setContentText(payload.subtitle)
@@ -128,6 +149,11 @@ object CallNotificationBuilder {
       builder
         .addAction(R.drawable.ic_call_decline, "Decline", declineIntent)
         .addAction(R.drawable.ic_call_answer, "Answer", answerIntent)
+    }
+
+    if (channelId == CallConstants.FALLBACK_CHANNEL_ID) {
+      builder.setTimeoutAfter(CallConstants.RING_TIMEOUT_MS)
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setDefaults(Notification.DEFAULT_SOUND or Notification.DEFAULT_VIBRATE)
     }
 
     return builder.build()

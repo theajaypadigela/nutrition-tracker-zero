@@ -12,6 +12,8 @@ export type HealthStatus = 'idle' | 'loading' | 'ready' | 'locked' | 'mismatch' 
 
 interface HealthState {
   status: HealthStatus;
+  /** Changes when saved settings or targets are loaded/applied, so dependent views reload their API data. */
+  revision: number;
   mode: Mode;
   profile: HealthProfile | null;
   targetSet: TargetSetInfo | null;
@@ -36,7 +38,13 @@ const Ctx = createContext<HealthState | null>(null);
 
 export function HealthProvider({ children }: { children: React.ReactNode }) {
   const { profile: who, secret, ready } = useProfile();
-  const [state, setState] = useState<Omit<HealthState, 'refresh' | 'apply'>>({
+  const whoId = who?.id;
+  const accountKey = whoId ? `${whoId}:${secret ?? ''}` : null;
+  const currentAccount = useRef(accountKey);
+  currentAccount.current = accountKey;
+  const [state, setState] = useState<Omit<HealthState, 'refresh' | 'apply'> & { accountKey: string | null }>({
+    accountKey: null,
+    revision: 0,
     status: 'idle',
     ...GENERIC,
     error: null,
@@ -45,23 +53,26 @@ export function HealthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     const id = ++run.current;
-    if (!who) {
-      setState({ status: 'idle', ...GENERIC, error: null });
+    if (!whoId) {
+      setState(s => ({ accountKey, revision: s.revision, status: 'idle', ...GENERIC, error: null }));
       return;
     }
     if (!secret) {
       // No secret on this phone: health features stay off, and the app behaves as before (generic references).
-      setState({ status: 'locked', ...GENERIC, error: null });
+      setState(s => ({ accountKey, revision: s.revision, status: 'locked', ...GENERIC, error: null }));
       return;
     }
     setState(s => ({
-      ...s,
-      status: s.status === 'ready' ? 'ready' : 'loading',
+      ...(s.accountKey === accountKey ? s : { ...GENERIC, error: null, revision: s.revision }),
+      accountKey,
+      status: s.accountKey === accountKey && s.status === 'ready' ? 'ready' : 'loading',
     }));
     try {
       const r = await api.getHealthProfile();
       if (id !== run.current) return;
-      setState({
+      setState(s => ({
+        accountKey,
+        revision: s.revision + 1,
         status: 'ready',
         mode: r.profile.mode,
         profile: r.profile.mode === 'generic' ? null : r.profile,
@@ -69,12 +80,12 @@ export function HealthProvider({ children }: { children: React.ReactNode }) {
         checkIn: r.checkIn ?? null,
         numbersHidden: r.profile.numbersHidden === true,
         error: null,
-      });
+      }));
     } catch (e) {
       if (id !== run.current) return;
       if (e instanceof ApiError && (e.code === 'profile_secret_invalid' || e.code === 'profile_secret_required')) {
         // The secret on this phone is not this profile's (a stale Keychain entry after a reinstall, say).
-        setState({ status: 'mismatch', ...GENERIC, error: null });
+        setState(s => ({ accountKey, revision: s.revision + 1, status: 'mismatch', ...GENERIC, error: null }));
       } else {
         setState(s => ({
           ...s,
@@ -83,14 +94,22 @@ export function HealthProvider({ children }: { children: React.ReactNode }) {
         }));
       }
     }
-  }, [who, secret]);
+  }, [whoId, secret, accountKey]);
 
   useEffect(() => {
+    const pending = run;
     if (ready) refresh();
+    return () => { ++pending.current; };
   }, [ready, refresh]);
 
   const apply = useCallback((r: ProfileResponse) => {
-    setState({
+    // Ignore a save that belonged to an account we have since left.
+    if (accountKey !== currentAccount.current) return;
+    // A fetch started before this save must not replace the newly saved answers.
+    ++run.current;
+    setState(s => ({
+      accountKey,
+      revision: s.revision + 1,
       status: 'ready',
       mode: r.profile.mode,
       profile: r.profile.mode === 'generic' ? null : r.profile,
@@ -98,10 +117,20 @@ export function HealthProvider({ children }: { children: React.ReactNode }) {
       checkIn: r.checkIn ?? null,
       numbersHidden: r.profile.numbersHidden === true,
       error: null,
-    });
-  }, []);
+    }));
+  }, [accountKey]);
 
-  const value = useMemo(() => ({ ...state, refresh, apply }), [state, refresh, apply]);
+  const value = useMemo(() => {
+    const { accountKey: loadedAccount, ...snapshot } = state;
+    return {
+      ...(loadedAccount === accountKey ? snapshot : {
+        ...GENERIC, revision: state.revision, error: null,
+        status: (!whoId ? 'idle' : secret ? 'loading' : 'locked') as HealthStatus,
+      }),
+      refresh,
+      apply,
+    };
+  }, [state, accountKey, whoId, secret, refresh, apply]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

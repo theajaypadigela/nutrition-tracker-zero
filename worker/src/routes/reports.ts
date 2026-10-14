@@ -15,11 +15,13 @@ import { badRequest, json, nowIso } from '../http';
 import { indexFromResults, indexStatements, type LogItemRow } from '../db/queries';
 import { NUTRIENTS, type NutrientKey } from '../domain/nutrients';
 import { itemNutrients } from '../domain/intake/items';
+import { buildRangeReport } from '../domain/report/range';
 import { MAX_HISTORY_WEEKS, buildWeeklyReport } from '../domain/report/weekly';
 import type { DayMark, IntakeDay, IntakeItem } from '../domain/intake/types';
 import { addDays, isValidDate, localDateIn, weekStartOf } from '../domain/time';
 import {
   healthFromResults,
+  profileStatement,
   healthStatements,
   insertSetStatement,
   modeOf,
@@ -33,7 +35,7 @@ const MIN_WINDOW_WEEKS = 4;
 
 type ItemRow = Pick<LogItemRow, 'local_date' | 'food_id' | 'raw_name' | 'quantity' | 'unit' | 'status'>;
 
-export async function weeklyReportResponse({ req, env, url, user }: Ctx): Promise<Response> {
+export async function weeklyReportResponse({ req, env, url, user, unlocked }: Ctx): Promise<Response> {
   const db = env.DB;
   const u = user!;
   const today = localDateIn(u.timezone);
@@ -70,7 +72,7 @@ export async function weeklyReportResponse({ req, env, url, user }: Ctx): Promis
 
   // A profile with a secret reads its report only with it, whether or not it has a health profile, so the answer never says which
   // (security review). A profile from before secrets existed has no health profile, and gets the generic report as before.
-  if (u.secret_hash || state.profile) await requireProfileSecret(req, u.secret_hash);
+  if ((u.secret_hash || state.profile) && !unlocked) await requireProfileSecret(req, u.secret_hash, { db, userId: u.id });
   const mode = modeOf(state.profile);
 
   // The set in force may have to move with a birthday (plan 6.2): the report adds it, once, as it reads.
@@ -130,6 +132,39 @@ export async function weeklyReportResponse({ req, env, url, user }: Ctx): Promis
   return json(report);
 }
 
+/** Inclusive date-range totals. Uses the same calculator on the server and the embedded backend. */
+export async function rangeReportResponse({ req, env, url, user, unlocked }: Ctx): Promise<Response> {
+  const u = user!;
+  const today = localDateIn(u.timezone);
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  if (!from || !isValidDate(from)) throw badRequest('from must be YYYY-MM-DD', { field: 'from' });
+  if (!to || !isValidDate(to)) throw badRequest('to must be YYYY-MM-DD', { field: 'to' });
+  if (from > to) throw badRequest('from must not be after to', { field: 'from' });
+  if (from > today) throw badRequest('from cannot be in the future', { field: 'from' });
+  const through = to > today ? today : to;
+  const db = env.DB;
+  const profile = await profileStatement(db, u.id).first<{ numbers_hidden: number }>();
+  if ((u.secret_hash || profile) && !unlocked) await requireProfileSecret(req, u.secret_hash, { db, userId: u.id });
+  const numbersHidden = profile?.numbers_hidden === 1;
+  const results = await db.batch([
+    ...indexStatements(db),
+    db.prepare(`SELECT local_date, food_id, raw_name, quantity, unit, status FROM log_items
+      WHERE user_id = ?1 AND local_date BETWEEN ?2 AND ?3`).bind(u.id, from, through),
+    db.prepare(`SELECT local_date FROM day_status
+      WHERE user_id = ?1 AND local_date BETWEEN ?2 AND ?3 AND status = 'skip'`).bind(u.id, from, through),
+  ]);
+  const index = indexFromResults(results.slice(0, 3));
+  const rows = (results[3] as D1Result<ItemRow>).results;
+  const skipped = (results[4] as D1Result<{ local_date: string }>).results;
+  return json(buildRangeReport({
+    from, to, through, numbersHidden,
+    skippedDates: skipped.map(d => d.local_date),
+    items: rows.map(row => ({ date: row.local_date, pending: row.status !== 'resolved', nutrients: itemNutrients(index, row) })),
+  }));
+}
+
 export function registerReports(router: Router) {
+  router.add('GET', '/reports/range', 'user', rangeReportResponse);
   router.add('GET', '/reports/weekly', 'user', weeklyReportResponse);
 }

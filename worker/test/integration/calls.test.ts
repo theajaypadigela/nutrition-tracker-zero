@@ -97,6 +97,24 @@ describe('webhook replay scenarios', () => {
     expect(call).toMatchObject({ id: start.callId, status: 'tool_saved', endedReason: 'assistant-ended-call', durationSeconds: 150 });
   });
 
+  it('marks completion through the Vapi webhook only after a yes, without disturbing saved foods', async () => {
+    const { userId, token } = await profileWithKey();
+    const start = await startCall(userId);
+    const callId = vapiId();
+    await api('POST', `/calls/${start.callId}/started`, { userId, body: { vapiCallId: callId } });
+    await postWebhook(token, fillFixture(saveFixture, { CALL_ID: callId, TOOL_CALL_ID: 'foods' }));
+    const mark = (confirmed: unknown) => JSON.stringify({ message: { type: 'tool-calls', call: { id: callId },
+      toolCallList: [{ id: 'mark', function: { name: 'mark_day_complete', arguments: { confirmed } } }] } });
+    expect((await postWebhook(token, mark(false))).body.results[0].error).toContain('explicit yes');
+    expect((await api('GET', `/days/${start.localDate}`, { userId })).body.status).toBeNull();
+    expect((await postWebhook(token, mark(true))).body.results[0].result).toBe('Day marked complete');
+    expect((await api('GET', `/days/${start.localDate}`, { userId })).body.status).toBe('complete');
+    expect(await callItems(userId)).toHaveLength(5);
+    await api('PUT', `/days/${start.localDate}/status`, { userId, body: { status: 'partial' } });
+    await postWebhook(token, mark(true));
+    expect((await api('GET', `/days/${start.localDate}`, { userId })).body.status).toBe('partial');
+  });
+
   it('a call that ends without save_foods becomes no_list with its transcript', async () => {
     const { userId, token } = await profileWithKey();
     const start = await startCall(userId);

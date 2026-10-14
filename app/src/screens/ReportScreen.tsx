@@ -10,6 +10,8 @@ import { CoverageCard } from '@/components/report/CoverageCard';
 import { EnergyCard } from '@/components/report/EnergyCard';
 import { FourWeekCard } from '@/components/report/FourWeekCard';
 import { InsightCard } from '@/components/report/InsightCard';
+import { PeriodPicker } from '@/components/report/PeriodPicker';
+import { RangeIntakeCard } from '@/components/report/RangeIntakeCard';
 import { IntakeCard } from '@/components/report/IntakeCard';
 import { NutrientLine } from '@/components/report/NutrientLine';
 import { QualityCard } from '@/components/report/QualityCard';
@@ -20,6 +22,7 @@ import { WeighInSheet, targetChangeLines, type WeighInResult } from '@/component
 import { WeightCard } from '@/components/weight/WeightCard';
 import { useHealthCard } from '@/hooks/useHealthCard';
 import { useToday } from '@/hooks/useToday';
+import { useRangeReport } from '@/hooks/useRangeReport';
 import { useWeeklyReport } from '@/hooks/useWeeklyReport';
 import { useWeightPrompt } from '@/hooks/useWeightPrompt';
 import { strings } from '@/i18n/strings';
@@ -28,6 +31,7 @@ import { useMeta } from '@/state/MetaContext';
 import { space } from '@/theme';
 import { addDays, weekStart } from '@/utils/dates';
 import { insightAction, insightText } from '@/utils/insights';
+import { rangeLabel, reportBounds, type ReportPeriod } from '@/utils/reportRange';
 import { isJudged, nutrientInfo, weekEyebrow, weekRangeLabel } from '@/utils/report';
 
 const t = strings.report;
@@ -47,21 +51,28 @@ export default function ReportScreen() {
   const health = useHealth();
   const weightPrompt = useWeightPrompt();
   const today = useToday();
-  const [weekIdx, setWeekIdx] = useState(0);
+  const [period, setPeriod] = useState<ReportPeriod>('week');
+  const [anchor, setAnchor] = useState(today);
+  const [custom, setCustom] = useState({ from: weekStart(today), to: today });
+  const weekIdx = Math.round((Date.parse(`${weekStart(anchor)}T00:00:00Z`) - Date.parse(`${weekStart(today)}T00:00:00Z`)) / (7 * 86400000));
+  const setWeekIdx = (update: (value: number) => number) => setAnchor(addDays(weekStart(today), update(weekIdx) * 7));
+  const bounds = reportBounds(period, anchor, custom);
+  const intakeRange = useRangeReport(bounds.from, bounds.to);
   const [weighIn, setWeighIn] = useState(false);
   const [weighNote, setWeighNote] = useState<string[] | null>(null);
   const start = addDays(weekStart(today), weekIdx * 7);
-  const range = useWeeklyReport(start);
+  const range = useWeeklyReport(start, period === 'week');
   const [scoreOpen, setScoreOpen] = useState(false);
   useFocusEffect(
     useCallback(() => {
-      range.reload();
+      intakeRange.reload();
+      if (period === 'week') range.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [start]),
+    }, [start, period, bounds.from, bounds.to]),
   );
 
   const report = range.report;
-  const hidden = report?.display.numbersHidden === true;
+  const hidden = health.numbersHidden || report?.display.numbersHidden === true;
   const byKey = useMemo(() => Object.fromEntries((report?.nutrients ?? []).map(n => [n.nutrient, n])), [report]);
   const judged = !!report && isJudged(report.coverage.confidence);
 
@@ -123,13 +134,21 @@ export default function ReportScreen() {
   return (
     <TabScreen
       title={t.title}
-      subtitle={`${weekEyebrow(weekIdx)} · ${weekRangeLabel(start)}`}
-      refreshing={range.refreshing}
-      onRefresh={range.reload}
+      subtitle={period === 'week' ? `${weekEyebrow(weekIdx)} · ${weekRangeLabel(start)}` : rangeLabel(bounds.from, bounds.to)}
+      refreshing={intakeRange.loading || (period === 'week' && range.refreshing)}
+      onRefresh={() => { intakeRange.reload(); if (period === 'week') range.reload(); }}
     >
+      <PeriodPicker period={period} onPeriod={setPeriod} anchor={anchor} onAnchor={setAnchor}
+        custom={custom} onCustom={setCustom} today={today} />
+      {intakeRange.error ? <Notice tone="danger" action={{ label: t.loadingRetry, onPress: intakeRange.reload }}>{intakeRange.error}</Notice> : null}
+      {intakeRange.loading && !intakeRange.report ? <LoadingState label={t.loading} /> : null}
+      {intakeRange.locked ? <Notice tone="info" action={{ label: t.unlock, onPress: () => navigation.navigate('Reauthenticate') }}>{t.locked}</Notice> : null}
+      {intakeRange.report && !hidden && !intakeRange.hidden ? <RangeIntakeCard key={`${bounds.from}-${bounds.to}`} report={intakeRange.report} nutrients={meta.nutrients} /> : null}
+      {period !== 'week' && (hidden || intakeRange.hidden) ? <Notice tone="info">{strings.lowPressure.nothing}</Notice> : null}
+      {period === 'week' ? <>
       {range.error ? <Notice tone="danger">{range.error}</Notice> : null}
 
-      {/* A locked report means the profile already has personal targets, kept by its secret: offer the code, not a fresh start. */}
+      {/* A locked report needs password login to restore access to saved personal targets. */}
       {healthCard.visible && !range.locked ? (
         <HealthCard onStart={() => navigation.navigate('HealthIntro')} onDismiss={healthCard.dismiss} />
       ) : null}
@@ -167,7 +186,7 @@ export default function ReportScreen() {
       {range.locked ? (
         <Notice
           tone="info"
-          action={{ label: t.unlock, onPress: () => navigation.navigate('RecoveryEntry') }}
+          action={{ label: t.unlock, onPress: () => navigation.navigate('Reauthenticate') }}
           testID="report-locked"
         >
           {t.locked}
@@ -316,6 +335,8 @@ export default function ReportScreen() {
           </ListGroup>
         </FormGroup>
       ) : null}
+
+      </> : null}
 
       <Text variant="caption" tone="muted">
         {strings.disclaimer.footer} {t.all.note}

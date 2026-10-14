@@ -37,9 +37,18 @@ object CallAlarms {
 
   /** Called when the user handles the day's call some other way (Log now, Talk now, a started call). */
   fun cancelRetry(context: Context) {
+    cancel(context, REQUEST_RETRY)
+  }
+
+  fun cancelAll(context: Context) {
+    cancel(context, REQUEST_RETRY)
+    cancel(context, REQUEST_SNOOZE)
+  }
+
+  private fun cancel(context: Context, requestCode: Int) {
     val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
     val existing =
-      PendingIntent.getBroadcast(context, REQUEST_RETRY, fireIntent(context, null), flags() or PendingIntent.FLAG_NO_CREATE)
+      PendingIntent.getBroadcast(context, requestCode, fireIntent(context, null), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE)
     if (existing != null) {
       am.cancel(existing)
       existing.cancel()

@@ -11,23 +11,26 @@ const key = (id: string) => `ntz.health-card.dismissed.${id}`;
  */
 export function useHealthCard(): { visible: boolean; dismiss: () => void } {
   const { profile } = useProfile();
-  const { mode, status } = useHealth();
+  const profileId = profile?.id;
+  const { mode, status, profile: healthProfile } = useHealth();
   const [dismissed, setDismissed] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
+    let active = true;
     setDismissed(null);
-    AsyncStorage.getItem(key(profile.id)).then(
-      v => setDismissed(v === '1'),
-      () => setDismissed(false),
+    if (!profileId) return;
+    AsyncStorage.getItem(key(profileId)).then(
+      v => { if (active) setDismissed(v === '1'); },
+      () => { if (active) setDismissed(false); },
     );
-  }, [profile]);
+    return () => { active = false; };
+  }, [profileId]);
 
   const dismiss = useCallback(() => {
     setDismissed(true);
     if (profile) AsyncStorage.setItem(key(profile.id), '1').catch(() => {});
   }, [profile]);
 
-  const eligible = !!profile && mode === 'generic' && (status === 'ready' || status === 'locked');
+  const eligible = !!profile && !healthProfile && mode === 'generic' && status === 'ready';
   return { visible: eligible && dismissed === false, dismiss };
 }

@@ -3,6 +3,7 @@ import { MIGRATIONS } from './migrations.generated';
 import { installPolyfills } from './polyfills';
 import { makeRequest } from './request';
 import { OnDeviceUrl } from './url';
+import { ON_DEVICE_VOICE_PROVIDER } from '@/config/voice';
 
 /**
  * The Worker, running inside the app on the phone's own SQLite file. The app's API client calls `request()` instead of `fetch()`,
@@ -52,6 +53,7 @@ export function createEmbedded(driver: SqlDriver, appToken: string): EmbeddedBac
     CALIBRATION: '',
     REQUIRE_SECRET: '',
     ON_DEVICE: '1',
+    VOICE_PROVIDER: ON_DEVICE_VOICE_PROVIDER,
   };
   const worker = loadWorker();
 

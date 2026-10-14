@@ -22,13 +22,13 @@ export interface WeeklyReportState {
 /**
  * The weekly view for the week starting at `start`, from the Worker (plan 9.3). It waits for the health context to settle,
  * so the secret is on the request when there is one, and it reports a missing or wrong secret as `locked` instead of an
- * error: that is a state with a way forward (enter the recovery code), not a failure.
+ * error: that is a state with a way forward (log in again with the account password), not a failure.
  */
-export function useWeeklyReport(start: string): WeeklyReportState {
-  const { status } = useHealth();
+export function useWeeklyReport(start: string, enabled = true): WeeklyReportState {
+  const { status, revision } = useHealth();
   const waiting = status === 'idle' || status === 'loading';
   const state: AsyncState<Result> = useAsync<Result>(async () => {
-    if (waiting) return null;
+    if (waiting || !enabled) return null;
     try {
       return { kind: 'report', report: await api.getWeeklyReport(start) };
     } catch (e) {
@@ -37,7 +37,7 @@ export function useWeeklyReport(start: string): WeeklyReportState {
       }
       throw e;
     }
-  }, [start, status]);
+  }, [start, status, revision, enabled]);
 
   return useMemo(
     () => ({

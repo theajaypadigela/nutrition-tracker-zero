@@ -1,5 +1,5 @@
-import { hashPassword, ON_DEVICE_PASSWORD_ITERATIONS, PASSWORD_ITERATIONS, verifyPassword } from '../auth';
-import { badRequest, HttpError, json, readJson } from '../http';
+import { hashPassword, ON_DEVICE_PASSWORD_ITERATIONS, PASSWORD_ITERATIONS, randomToken, sha256Hex, verifyPassword } from '../auth';
+import { badRequest, HttpError, json, nowIso, readJson } from '../http';
 import type { Router } from '../router';
 import { asObject, trimmedString } from '../validate';
 import { insertProfile, MAX_PROFILE_NAME } from './profiles';
@@ -9,11 +9,10 @@ export const MAX_PASSWORD = 128;
 
 /**
  * Accounts: the username is the profile's name, the password is kept as a PBKDF2 hash. Both routes need only the shared app token, since
- * nobody is signed in yet. What they return is what the app already keeps to know who this phone is (the profile's id), so a login
- * does not issue a session: the rest of the API still identifies the profile by X-User-Id, as before.
+ * nobody is signed in yet. Both return a credential the app stores securely and sends with X-User-Id, including on health routes.
  */
 export function registerAuth(router: Router) {
-  /** Creates the account and its profile. Answers like POST /profiles: the profile and its one-time secret (the recovery code). */
+  /** Creates the account and its profile, including the credential stored automatically by the app. */
   router.add('POST', '/auth/register', 'app', async ({ req, env }) => {
     const body = asObject(await readJson(req));
     const username = trimmedString(body.username, 'username', 1, MAX_PROFILE_NAME);
@@ -44,6 +43,9 @@ export function registerAuth(router: Router) {
     if (!user?.password_hash || !(await verifyPassword(password, user.password_hash))) {
       throw new HttpError(401, 'invalid_credentials', 'Wrong username or password');
     }
-    return json({ profile: { id: user.id, name: user.name } });
+    const secret = randomToken();
+    await env.DB.prepare('INSERT INTO account_sessions (token_hash, user_id, created_at) VALUES (?1, ?2, ?3)')
+      .bind(await sha256Hex(secret), user.id, nowIso()).run();
+    return json({ profile: { id: user.id, name: user.name }, secret });
   });
 }

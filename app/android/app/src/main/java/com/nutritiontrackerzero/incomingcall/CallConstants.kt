@@ -5,6 +5,7 @@ object CallConstants {
   /** High-importance, SILENT channel (the foreground-service ringer owns the looping ringtone). */
   const val NOTIFICATION_CHANNEL_ID = "incoming-call-native-v1"
   const val NOTIFICATION_CHANNEL_NAME = "Incoming Calls"
+  const val FALLBACK_CHANNEL_ID = "incoming-call-fallback-v1"
 
   /** Only one call is ever in flight, so a single fixed notification id is enough. */
   const val NOTIFICATION_ID = 0x0CA11 // "CALL"

@@ -57,7 +57,7 @@ function mealPlanLines(plan: MealStep[]): string[] {
   const later = plan.filter((s) => s.state === 'later').map((s) => mealWord(s.meal));
   const lines =
     due.length === 0
-      ? ["1. The meals so far are already logged. Ask once whether they've had anything else to eat or drink since; if not, say goodbye and end the call."]
+      ? ["1. The meals so far are already logged. Ask once whether they've had anything else to eat or drink since; if not, go to the day-completion question before ending the call."]
       : due.length === 1
         ? ['1. Ask about this meal:', stepLine(due[0]!)]
         : ['1. Go meal by meal in this order, one meal per question, and finish each meal before moving on:', ...due.map(stepLine)];
@@ -94,9 +94,13 @@ export function buildSystemPrompt(p: PromptInput): string {
     '4. Record each food as they named it, in singular form ("idli", not "idlis"), with the meal they had it at (breakfast, lunch, snack or dinner). Never invent foods or amounts.',
     '5. When they\'re done, read the whole list back with quantities and units, then ask "Is that right?" Apply corrections and read back what changed.',
     p.onDevice
-      ? '6. Only after they confirm, call save_foods once with the complete list of new items from this call. It saves quietly on their phone and sends no reply, so do not wait for one and do not call it a second time because nothing came back. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.'
-      : '6. Only after they confirm, call save_foods once with the complete list of new items from this call. Then say a short goodbye and end the call. If they correct something after saving, call save_foods again with the full corrected list.',
-    '7. If they want to stop early, save whatever they\'ve confirmed, say goodbye, and end the call. If they had nothing new to add, just say goodbye and end the call.',
+      ? '6. Only after they confirm, call save_foods once with the complete list of new items from this call. It saves quietly on their phone and sends no reply, so do not wait for one and do not call it a second time because nothing came back. Then ask the day-completion question below. If they correct something after saving, call save_foods again with the full corrected list.'
+      : '6. Only after they confirm, call save_foods once with the complete list of new items from this call. Then ask the day-completion question below. If they correct something after saving, call save_foods again with the full corrected list.',
+    '7. Before your final goodbye, including when there is nothing new to add, ask "Should I mark this day as complete?" Explain briefly if needed: complete means everything they ate and drank for the whole day is logged. Wait for their answer. Only an explicit yes to this question authorizes mark_day_complete with confirmed: true. Confirming the food read-back is not permission to mark the day complete. If they say no, are unsure, still plan to eat, or stop early, leave the day unchanged. Never infer completion from silence or a hangup.',
+    p.onDevice
+      ? '8. After an explicit yes, call mark_day_complete once. It saves quietly on their phone and sends no reply; do not wait or repeat it. Then say a short goodbye and end the call.'
+      : '8. After an explicit yes, call mark_day_complete and wait for success before saying the day is complete. If it fails, explain that the day could not be marked and offer to retry. Then say a short goodbye and end the call.',
+    'If they want to stop early, save whatever they have confirmed and end the call without marking the day complete.',
     ...(nextMeal ? [`When you say goodbye, wish them a nice ${nextMeal}.`] : []),
     'Never mention calories, macros, nutrition or health advice, even if asked. Say the app shows that. Keep every turn short.',
   ].join('\n');

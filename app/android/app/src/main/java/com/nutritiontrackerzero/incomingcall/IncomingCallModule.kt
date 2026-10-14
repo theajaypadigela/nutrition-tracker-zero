@@ -23,6 +23,42 @@ class IncomingCallModule(
 
   override fun getName(): String = "IncomingCall"
 
+  @ReactMethod
+  fun getReminderDiagnostics(promise: Promise) {
+    try {
+      promise.resolve(ReminderDiagnostics.snapshot(reactApplicationContext))
+    } catch (e: Exception) {
+      promise.reject("reminder_diagnostics_failed", "Could not read reminder delivery settings", e)
+    }
+  }
+
+  @ReactMethod
+  fun openReminderAppSettings() {
+    reactApplicationContext.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+      data = Uri.parse("package:" + reactApplicationContext.packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    })
+  }
+
+  @ReactMethod
+  fun scheduleIncomingCall(optionsJson: String, promise: Promise) {
+    try {
+      promise.resolve(NativeCallScheduler.schedule(reactApplicationContext, optionsJson).toDouble())
+    } catch (e: Exception) {
+      promise.reject("reminder_schedule_failed", "Could not schedule the food reminder: ${e.message}", e)
+    }
+  }
+
+  @ReactMethod
+  fun cancelScheduledCall(id: String, promise: Promise) {
+    try {
+      NativeCallScheduler.cancel(reactApplicationContext, id)
+      promise.resolve(null)
+    } catch (e: Exception) {
+      promise.reject("reminder_cancel_failed", "Could not cancel the food reminder", e)
+    }
+  }
+
   /**
    * Show the incoming call. Starts IncomingCallService (a phoneCall foreground service) which owns
    * the CallStyle + full-screen-intent notification, the looping ringtone, and the 60s timeout —

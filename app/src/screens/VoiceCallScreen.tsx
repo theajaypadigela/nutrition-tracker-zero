@@ -7,7 +7,7 @@ import type { CallInfo, Item } from '@/api/types';
 import { Badge, Button, Card, Divider, Text } from '@/components/kit';
 import { EditItemSheet } from '@/components/today/EditItemSheet';
 import VoiceSessionScreen, { type CallStatus } from '@/components/voice/VoiceSessionScreen';
-import { useVapiCall, type VoiceStatus } from '@/hooks/useVapiCall';
+import { useVoiceCall, type VoiceStatus } from '@/hooks/useVoiceCall';
 import type { RootStackParamList } from '@/navigation/types';
 import { shouldShield } from '@/services/calls/audioRoute';
 import { setCallScreenShown } from '@/services/calls/native';
@@ -31,11 +31,11 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
 };
 
 /** After the call, the webhook may land a moment later: poll the day briefly for this call's items. */
-function useCallOutcome(localDate: string | null, vapiCallId: string | null, ended: boolean, version: number) {
+function useCallOutcome(localDate: string | null, providerCallId: string | null, ended: boolean, version: number) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [callRow, setCallRow] = useState<CallInfo | null>(null);
   useEffect(() => {
-    if (!ended || !localDate || !vapiCallId) return;
+    if (!ended || !localDate || !providerCallId) return;
     let cancelled = false;
     let attempt = 0;
     const tick = async () => {
@@ -43,8 +43,8 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
       try {
         const day = await api.getDay(localDate);
         if (cancelled) return;
-        const mine = day.items.filter(i => i.callId === vapiCallId && i.source === 'call');
-        const row = day.calls.find(c => c.vapiCallId === vapiCallId) ?? null;
+        const mine = day.items.filter(i => i.callId === providerCallId && i.source === 'call');
+        const row = day.calls.find(c => (c.providerCallId ?? c.vapiCallId) === providerCallId) ?? null;
         setItems(mine);
         setCallRow(row);
         const settled = row && (row.status === 'tool_saved' || row.status === 'no_list' || row.status === 'failed') && row.endedReason;
@@ -57,14 +57,14 @@ function useCallOutcome(localDate: string | null, vapiCallId: string | null, end
     return () => {
       cancelled = true;
     };
-  }, [ended, localDate, vapiCallId, version]);
+  }, [ended, localDate, providerCallId, version]);
   return { items, call: callRow };
 }
 
 export default function VoiceCallScreen() {
   const navigation = useNavigation();
   const { params } = useRoute<RouteProp<RootStackParamList, 'VoiceCall'>>();
-  const { status, error, transcript, isSpeaking, session, audio, setAudioRoute, start, stop } = useVapiCall();
+  const { status, error, transcript, isSpeaking, session, audio, setAudioRoute, start, stop } = useVoiceCall();
   const started = useRef(false);
   const [editing, setEditing] = useState<Item | null>(null);
   const [version, setVersion] = useState(0);
@@ -84,8 +84,8 @@ export default function VoiceCallScreen() {
     }
   }, [params.autoStart, params.kind, start]);
 
-  const ended = status === 'ended' || (status === 'error' && !!session?.vapiCallId);
-  const outcome = useCallOutcome(session?.localDate ?? null, session?.vapiCallId ?? null, ended, version);
+  const ended = status === 'ended' || (status === 'error' && !!session?.providerCallId);
+  const outcome = useCallOutcome(session?.localDate ?? null, session?.providerCallId ?? null, ended, version);
   const live = status === 'active' || status === 'connecting';
 
   return (

@@ -195,9 +195,9 @@ From `app/src/i18n/strings.ts`. `{name}` holes are filled with numbers or words 
 | health.intro.why.title | Why |
 | health.intro.why.body | Each answer changes a number or a message. Nothing else is asked. |
 | health.intro.stored.title | What is stored |
-| health.intro.stored.body | Those answers and your weigh-ins, on our server, behind a secret that only your phone holds. Your answer to the safety question is never stored. |
+| health.intro.stored.body | Those answers and your weigh-ins, on our server, protected by your account login. Your answer to the safety question is never stored. |
 | health.intro.who.title | Who else sees it |
-| health.intro.who.body | Nobody. The daily voice call never receives any of it. The call itself is handled by Vapi and the speech and language services it uses, as before. |
+| health.intro.who.body | Nobody. The daily voice call never receives any of it. The call itself is handled by the configured voice provider and the speech and language services it uses. |
 | health.intro.consent | I have read what is stored and why. |
 | health.intro.continue | Continue |
 | health.intro.skip | Skip for now |
@@ -312,28 +312,16 @@ From `app/src/i18n/strings.ts`. `{name}` holes are filled with numbers or words 
 | health.referenceOnly.careTeamAction | Add my care-team numbers |
 | health.referenceOnly.talk | A doctor or dietitian can help with what is right for you. |
 | health.referenceOnly.done | Done |
-| health.recovery.title | Save your recovery code |
-| health.recovery.body | This code unlocks your personal targets on a new phone or after a reinstall. It is shown once. Keep it in a password manager. |
-| health.recovery.warn | If you lose it, your personal data cannot be reached and you would start again with a new profile. |
-| health.recovery.notStored | This phone could not keep the code in its secure storage, so you will need to type it the next time you open the app. Save it now. |
-| health.recovery.share | Save or share the code |
-| health.recovery.saved | I have saved it |
-| health.recovery.entryTitle | Enter your recovery code |
-| health.recovery.entryBody | This profile has a recovery code. Enter it to unlock your personal targets on this phone. |
-| health.recovery.entryField | Recovery code |
-| health.recovery.entryAction | Unlock |
-| health.recovery.entryWrong | That is not this profile's code. Check it and try again. |
-| health.recovery.startOver | I do not have it |
-| health.recovery.claimAction | Set up a new code |
-| health.recovery.claimRefused | This profile already has a code, so a new one cannot be set up. Without the code, your personal targets cannot be reached from this phone. |
-| health.recovery.claimClosed | A new code cannot be set up from the app. Ask the person who runs the app to issue you one, then enter it above. |
-| health.recovery.startOverBody | Without the code, your personal targets cannot be reached from this phone. Your food log is unaffected. |
 | health.targets.title | Your targets |
 | health.targets.subtitle | And how we calculate them |
 | health.targets.recommended | Recommended |
 | health.targets.custom | Custom |
 | health.targets.careTeam | From your care team |
 | health.targets.reset | Reset to recommended |
+| health.targets.change | Change |
+| health.targets.edit | Change your targets |
+| health.targets.editHint | Set your own number for any target, higher or lower than recommended. |
+| health.targets.recommendedValue | Recommended: {value} |
 | health.targets.groups.energy | Energy |
 | health.targets.groups.macros | Macros and fibre |
 | health.targets.groups.limits | Keep in check |
@@ -347,7 +335,7 @@ From `app/src/i18n/strings.ts`. `{name}` holes are filled with numbers or words 
 | health.targets.staleWeight | Based on your weight in {month}. |
 | health.targets.checkIn | You have been on a weight-loss target for a while. Time to check in: continue, keep your weight steady, or talk to a doctor or dietitian. |
 | health.targets.checkInAction | Check in |
-| health.targets.locked | Your recovery code is needed to see your personal targets on this phone. |
+| health.targets.locked | Log in again to load your saved personal targets. |
 | health.targets.empty | No personal targets yet. |
 | health.targets.setUp | Set up personal targets |
 | health.settings.section | Personal targets |
@@ -367,7 +355,7 @@ From `app/src/i18n/strings.ts`. `{name}` holes are filled with numbers or words 
 | health.settings.deleteProfileBody | Everything is removed now, and from backups within 30 days: your food log, call history, targets and health data. Foods you added stay in the shared list without your name. |
 | health.settings.cancel | Cancel |
 | health.settings.confirm | Delete |
-| health.settings.unlock | Unlock with your recovery code |
+| health.settings.unlock | Log in again |
 
 ### report
 
@@ -402,8 +390,8 @@ From `app/src/i18n/strings.ts`. `{name}` holes are filled with numbers or words 
 | report.generic | Compared with a general reference for a typical adult. Make your targets personal to compare with your own. |
 | report.referenceOnly | No personal targets, so these are amounts only. |
 | report.referenceOnlyCareTeam | Bars are drawn against the numbers you typed from your care team. |
-| report.locked | Your recovery code is needed to see your personal report on this phone. |
-| report.unlock | Unlock |
+| report.locked | Log in again to load your personal report. |
+| report.unlock | Log in again |
 | report.stoodOut | What stood out |
 | report.nothingStoodOut | Nothing stood out this week. |
 | report.loading | Loading your week… |

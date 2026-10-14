@@ -16,6 +16,7 @@ import { registerReports } from './routes/reports';
 import { registerProfiles } from './routes/profiles';
 import { registerSettings } from './routes/settings';
 import { registerUncached } from './routes/uncached';
+import { registerVoiceRoutes } from './voice/routes';
 
 const router = new Router();
 registerMeta(router);
@@ -25,6 +26,7 @@ registerProfile(router);
 registerReports(router);
 registerSettings(router);
 registerCalls(router);
+registerVoiceRoutes(router);
 registerDays(router);
 registerItems(router);
 registerFoods(router);
@@ -50,7 +52,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       if (!ctx.user && needsUser) throw new HttpError(404, 'unknown_user', 'Profile not found');
     }
     if (ctx.user && auth === 'secret') {
-      await requireProfileSecret(req, ctx.user.secret_hash);
+      await requireProfileSecret(req, ctx.user.secret_hash, { db: env.DB, userId: ctx.user.id });
       ctx.unlocked = true;
     } else if (ctx.user && auth === 'user') {
       // Hardening (plan 8.3.2, Phase 6), off until the deployment says every friend has updated and claimed a secret: then every
@@ -58,9 +60,9 @@ async function handle(req: Request, env: Env): Promise<Response> {
       // open, and can no longer claim one (the claim needs this check too): anyone holding the shared token could otherwise claim it
       // first. The owner of the deployment issues it a code instead (docs/BREACH_RUNBOOK.md).
       if ((env.REQUIRE_SECRET as string) === '1') {
-        await requireProfileSecret(req, ctx.user.secret_hash);
+        await requireProfileSecret(req, ctx.user.secret_hash, { db: env.DB, userId: ctx.user.id });
         ctx.unlocked = true;
-      } else ctx.unlocked = await hasProfileSecret(req, ctx.user.secret_hash);
+      } else ctx.unlocked = await hasProfileSecret(req, ctx.user.secret_hash, { db: env.DB, userId: ctx.user.id });
     }
   }
   return match.route.handler(ctx);

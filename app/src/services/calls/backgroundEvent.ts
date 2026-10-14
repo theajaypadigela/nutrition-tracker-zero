@@ -3,8 +3,8 @@ import { handleNotifeeEvent } from './ringEvents';
 import { setPendingOpen } from './pendingOpen';
 
 /**
- * Headless Notifee handler. Registered in index.js BEFORE registerComponent and outside any
- * try/catch, so a JS load failure can never orphan a ring.
+ * Legacy Notifee notification interactions. Daily/test scheduling now delivers natively;
+ * this handler is retained for notification taps and old notifications during migration.
  */
 export function registerBackgroundEvent(): void {
   notifee.onBackgroundEvent(async (event) => {

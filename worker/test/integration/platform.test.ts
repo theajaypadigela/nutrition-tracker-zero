@@ -51,9 +51,10 @@ describe('D1 capabilities', () => {
     expect(row?.c).toBe(0);
   });
 
-  it('applied the migrations: the original tables, and the four health tables of 0002', async () => {
+  it('applied the migrations, including health data and password-login sessions', async () => {
     const { results } = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite_%' ESCAPE '\\' AND name NOT LIKE 'd1\\_%' ESCAPE '\\' AND name NOT LIKE 't\\_%' ESCAPE '\\' ORDER BY name`).all<{ name: string }>();
     expect(results.map((r) => r.name)).toEqual([
+      'account_sessions',
       'calls',
       'day_status',
       'food_aliases',

@@ -9,6 +9,13 @@
 RCT_EXTERN_METHOD(presentIncomingCall:(NSString *)payloadJson)
 RCT_EXTERN_METHOD(dismissIncomingCall)
 
+RCT_EXTERN_METHOD(scheduleIncomingCall:(NSString *)optionsJson
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(cancelScheduledCall:(NSString *)notificationId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(consumePendingAnswer:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

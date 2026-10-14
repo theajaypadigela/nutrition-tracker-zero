@@ -12,6 +12,7 @@ jest.mock('@react-navigation/native', () => {
   return { useNavigation: () => nav, useIsFocused: () => true, useRoute: jest.fn(() => ({ params: {} })), useFocusEffect: jest.fn(), __nav: nav };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+jest.mock('@/hooks/useRangeReport', () => ({ useRangeReport: jest.fn(() => ({ report: null, hidden: false, locked: false, loading: false, error: null, reload: jest.fn() })) }));
 jest.mock('@/hooks/useWeeklyReport', () => ({ useWeeklyReport: jest.fn() }));
 // The reports are for the week of 5 October; "today" is its Sunday, so this week is the week on screen.
 jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-11' }));
@@ -729,8 +730,8 @@ describe('the Report tab', () => {
     const tree = await render(<ReportScreen />);
     expect(has(tree, 'report-locked')).toBe(true);
     expect(all(tree)).toContain(strings.report.locked);
-    await press(tree, 'Unlock');
-    expect(nav.navigate).toHaveBeenCalledWith('RecoveryEntry');
+    await press(tree, 'Log in again');
+    expect(nav.navigate).toHaveBeenCalledWith('Reauthenticate');
   });
 
   it('shows loading and errors without a report', async () => {
@@ -839,8 +840,8 @@ describe('All nutrients (plan 5.2)', () => {
   it('says it is locked, with a way forward, when the secret is missing', async () => {
     showing(null, { locked: true });
     const tree = await render(<WeeklySummaryScreen />);
-    await press(tree, 'Unlock');
-    expect(nav.navigate).toHaveBeenCalledWith('RecoveryEntry');
+    await press(tree, 'Log in again');
+    expect(nav.navigate).toHaveBeenCalledWith('Reauthenticate');
   });
 });
 

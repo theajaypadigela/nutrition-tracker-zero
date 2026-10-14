@@ -35,7 +35,7 @@ jest.mock('@/api/client', () => {
 });
 
 import { api, ApiError } from '@/api/client';
-import LoginScreen from '@/screens/LoginScreen';
+import LoginScreen, { ReauthenticateScreen } from '@/screens/LoginScreen';
 import RegisterScreen from '@/screens/RegisterScreen';
 import { useProfile } from '@/state/ProfileContext';
 import { ThemeProvider } from '@/theme';
@@ -102,6 +102,19 @@ beforeEach(() => {
 });
 
 describe('the log in screen', () => {
+  it('restores saved data with the account password and returns to the settings flow', async () => {
+    (useProfile as jest.Mock).mockReturnValue({ profile: ASHA, selectProfile });
+    api_.login.mockResolvedValue({ profile: ASHA, secret: 'n'.repeat(43) });
+    const tree = await render(ReauthenticateScreen);
+    expect(box(tree, 'login-username').props.value).toBe('Asha');
+    expect(box(tree, 'login-username').props.editable).toBe(false);
+    await type(tree, 'login-password', 'the password');
+    await press(tree, 'login-submit');
+    expect(api_.login).toHaveBeenCalledWith('Asha', 'the password');
+    expect(selectProfile).toHaveBeenCalledWith(ASHA, { secret: 'n'.repeat(43) });
+    expect(nav.goBack).toHaveBeenCalled();
+  });
+
   it('offers Log in only once there is a username and a password', async () => {
     const tree = await render(LoginScreen);
     expect(disabled(tree, 'login-submit')).toBe(true);
@@ -114,15 +127,15 @@ describe('the log in screen', () => {
   });
 
   it('logs in with the username trimmed and the password exactly as typed, and selects the profile it gets back', async () => {
-    api_.login.mockResolvedValue(ASHA);
+    api_.login.mockResolvedValue({ profile: ASHA, secret: 's'.repeat(43) });
     const tree = await render(LoginScreen);
     await type(tree, 'login-username', '  asha ');
     await type(tree, 'login-password', ' pass word ');
     await press(tree, 'login-submit');
     expect(api_.login).toHaveBeenCalledWith('asha', ' pass word ');
-    expect(selectProfile).toHaveBeenCalledWith(ASHA);
-    // An existing account is not a new profile: no recovery code, no setup.
-    expect(selectProfile.mock.calls[0]).toHaveLength(1);
+    expect(selectProfile).toHaveBeenCalledWith(ASHA, { secret: 's'.repeat(43) });
+    // Login restores access without restarting onboarding.
+    expect(selectProfile.mock.calls[0][1]).not.toHaveProperty('isNew');
   });
 
   it('says the username or password is wrong, without saying which, and selects nothing', async () => {
@@ -138,7 +151,7 @@ describe('the log in screen', () => {
   });
 
   it('shows any other failure as it is, and clears the old message on the next try', async () => {
-    api_.login.mockRejectedValueOnce(new ApiError(0, 'network', 'Could not reach the server')).mockResolvedValueOnce(ASHA);
+    api_.login.mockRejectedValueOnce(new ApiError(0, 'network', 'Could not reach the server')).mockResolvedValueOnce({ profile: ASHA, secret: 's'.repeat(43) });
     const tree = await render(LoginScreen);
     await type(tree, 'login-username', 'asha');
     await type(tree, 'login-password', 'pw');
@@ -146,11 +159,11 @@ describe('the log in screen', () => {
     expect(all(tree)).toContain('Could not reach the server');
     await press(tree, 'login-submit');
     expect(all(tree)).not.toContain('Could not reach the server');
-    expect(selectProfile).toHaveBeenCalledWith(ASHA);
+    expect(selectProfile).toHaveBeenCalledWith(ASHA, { secret: 's'.repeat(43) });
   });
 
   it('does not log in twice while the first is still going', async () => {
-    let finish!: (p: typeof ASHA) => void;
+    let finish!: (p: { profile: typeof ASHA; secret: string }) => void;
     api_.login.mockReturnValue(new Promise(res => (finish = res)));
     const tree = await render(LoginScreen);
     await type(tree, 'login-username', 'asha');
@@ -163,7 +176,7 @@ describe('the log in screen', () => {
       byId(tree, 'login-submit', 'onPress').props.onPress();
     });
     expect(api_.login).toHaveBeenCalledTimes(1);
-    await act(async () => finish(ASHA));
+    await act(async () => finish({ profile: ASHA, secret: 's'.repeat(43) }));
     expect(selectProfile).toHaveBeenCalledTimes(1);
   });
 

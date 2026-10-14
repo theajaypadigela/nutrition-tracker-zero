@@ -162,7 +162,7 @@ export function registerDays(router: Router) {
     if (body.callId !== undefined && body.callId !== null) {
       const id = positiveInt(String(body.callId), 'callId');
       const call = await db
-        .prepare('SELECT vapi_call_id FROM calls WHERE id = ?1 AND user_id = ?2')
+        .prepare('SELECT COALESCE(provider_call_id, vapi_call_id) AS vapi_call_id FROM calls WHERE id = ?1 AND user_id = ?2')
         .bind(id, user!.id)
         .first<{ vapi_call_id: string | null }>();
       if (!call) throw notFound('Call not found');

@@ -12,18 +12,16 @@
 import { ON_DEVICE } from '@/config/local';
 
 /**
- * The words that depend on where the data lives. With the Worker on a server the data is "on our server" and a recovery code
- * matters on a new phone; with the Worker inside the app (`ON_DEVICE`) it never leaves the phone, and a new phone starts empty.
+ * The words that depend on where the data lives. With the Worker on a server the data is "on our server"; with the Worker inside the app (`ON_DEVICE`) it never leaves the phone, and a new phone starts empty.
  * Telling a person their health answers sit on a server when they do not would be false, so each setting has its own text and
  * its own consent version (a change to what is stored or where changes the version and asks again).
  */
 export const whereDataLives = (onDevice: boolean) =>
   onDevice
     ? {
-        consentVersion: '2026-10-v2',
+        consentVersion: '2026-10-v4',
         storedBody:
-          'Those answers and your weigh-ins, on this phone only, behind a secret that only this phone holds. They are not sent anywhere. Your answer to the safety question is never stored.',
-        recoveryBody: 'This code unlocks your personal targets if the app ever asks for it on this phone. It is shown once. Keep it somewhere safe.',
+          'Those answers and your weigh-ins, on this phone only, protected by your account login. They are not sent anywhere. Your answer to the safety question is never stored.',
         switchProfile: 'Your data stays on this phone. This phone stops ringing for this account until you log back in.',
         // The foods list is the person's own here: nobody else adds to it or sees it.
         addItemsNote: 'Foods you have not entered values for are saved anyway and count once you add them.',
@@ -45,10 +43,9 @@ export const whereDataLives = (onDevice: boolean) =>
         deleteProfileBody: 'Everything is removed from this phone now: your food log, call history, targets, health data and the foods you added.',
       }
     : {
-        consentVersion: '2026-10-v1',
+        consentVersion: '2026-10-v3',
         storedBody:
-          'Those answers and your weigh-ins, on our server, behind a secret that only your phone holds. Your answer to the safety question is never stored.',
-        recoveryBody: 'This code unlocks your personal targets on a new phone or after a reinstall. It is shown once. Keep it in a password manager.',
+          'Those answers and your weigh-ins, on our server, protected by your account login. Your answer to the safety question is never stored.',
         switchProfile: 'Your data stays on the server. This phone stops ringing for this account until you log back in.',
         addItemsNote: 'Foods nobody has entered values for are saved anyway and count once someone adds them.',
         unitConversionNote: (unit: string) => `Applies to everyone's items in ${unit} for this food.`,
@@ -113,7 +110,7 @@ export const strings = {
       },
       who: {
         title: 'Who else sees it',
-        body: 'Nobody. The daily voice call never receives any of it. The call itself is handled by Vapi and the speech and language services it uses, as before.',
+        body: 'Nobody. The daily voice call never receives any of it. The call itself is handled by the configured voice provider and the speech and language services it uses.',
       },
       consent: 'I have read what is stored and why.',
       continue: 'Continue',
@@ -286,28 +283,6 @@ export const strings = {
       talk: 'A doctor or dietitian can help with what is right for you.',
       done: 'Done',
     },
-    recovery: {
-      title: 'Save your recovery code',
-      body: where.recoveryBody,
-      warn: 'If you lose it, your personal data cannot be reached and you would start again with a new profile.',
-      notStored:
-        'This phone could not keep the code in its secure storage, so you will need to type it the next time you open the app. Save it now.',
-      share: 'Save or share the code',
-      saved: 'I have saved it',
-      entryTitle: 'Enter your recovery code',
-      entryBody: 'This profile has a recovery code. Enter it to unlock your personal targets on this phone.',
-      entryField: 'Recovery code',
-      entryAction: 'Unlock',
-      entryWrong: "That is not this profile's code. Check it and try again.",
-      startOver: 'I do not have it',
-      claimAction: 'Set up a new code',
-      claimRefused:
-        'This profile already has a code, so a new one cannot be set up. Without the code, your personal targets cannot be reached from this phone.',
-      claimClosed:
-        'A new code cannot be set up from the app. Ask the person who runs the app to issue you one, then enter it above.',
-      startOverBody:
-        'Without the code, your personal targets cannot be reached from this phone. Your food log is unaffected.',
-    },
     targets: {
       title: 'Your targets',
       subtitle: 'And how we calculate them',
@@ -337,7 +312,7 @@ export const strings = {
       checkIn:
         'You have been on a weight-loss target for a while. Time to check in: continue, keep your weight steady, or talk to a doctor or dietitian.',
       checkInAction: 'Check in',
-      locked: 'Your recovery code is needed to see your personal targets on this phone.',
+      locked: 'Log in again to load your saved personal targets.',
       empty: 'No personal targets yet.',
       setUp: 'Set up personal targets',
     },
@@ -359,7 +334,7 @@ export const strings = {
       deleteProfileBody: where.deleteProfileBody,
       cancel: 'Cancel',
       confirm: 'Delete',
-      unlock: 'Unlock with your recovery code',
+      unlock: 'Log in again',
     },
   },
 
@@ -369,6 +344,23 @@ export const strings = {
    */
   report: {
     title: 'Report',
+    loadingRetry: 'Try again',
+    periods: {
+      day: 'Daily', week: 'Weekly', month: 'Monthly', year: 'Yearly', custom: 'Custom',
+      previous: 'Previous period', next: 'Next period', done: 'Done',
+      from: 'Start date', to: 'End date', apply: 'Apply date range',
+      invalid: 'Choose a start date on or before the end date, with neither date in the future.',
+      title: 'Nutrient intake', total: 'Total logged', average: 'Daily average',
+      basis: '{logged} of {days} days have food logs. Averages use days with logs, including incomplete days.',
+      skipped: '{n} days left out of reports are excluded.',
+      pending: '{n} food entries are awaiting nutritional data.',
+      note: 'Totals reflect recorded food only. Unlogged intake is unknown. “At least” means some entries have missing values.',
+      unknown: 'Unknown', atLeast: 'At least {value}',
+      missing: '{n} entries missing this nutrient',
+      empty: 'No food logged in this period.',
+      more: 'View all nutrients', less: 'View fewer nutrients',
+      through: 'Includes logs through {date}.',
+    },
     week: {
       this: 'This week',
       last: 'Last week',
@@ -410,8 +402,8 @@ export const strings = {
       'Compared with a general reference for a typical adult. Make your targets personal to compare with your own.',
     referenceOnly: 'No personal targets, so these are amounts only.',
     referenceOnlyCareTeam: 'Bars are drawn against the numbers you typed from your care team.',
-    locked: 'Your recovery code is needed to see your personal report on this phone.',
-    unlock: 'Unlock',
+    locked: 'Log in again to load your personal report.',
+    unlock: 'Log in again',
     stoodOut: 'What stood out',
     nothingStoodOut: 'Nothing stood out this week.',
     loading: 'Loading your week…',

@@ -16,12 +16,64 @@ type IncomingCallNativeModule = {
   canUseFullScreenIntent: () => Promise<boolean>;
   openFullScreenIntentSettings: () => void;
   setCallScreenShown?: (shown: boolean) => void;
+  scheduleIncomingCall?: (optionsJson: string) => Promise<number>;
+  cancelScheduledCall?: (id: string) => Promise<void>;
+  getReminderDiagnostics?: () => Promise<string>;
+  openReminderAppSettings?: () => void;
 };
 
 const nativeModule: IncomingCallNativeModule | null =
   (NativeModules.IncomingCall as IncomingCallNativeModule | undefined) ?? null;
 
 export const isNativeCallAvailable = nativeModule != null;
+
+export interface NativeReminderDiagnostics {
+  schedulerVersion: number;
+  appVersion: string;
+  manufacturer: string;
+  brand: string;
+  model: string;
+  androidVersion: string;
+  androidSdk: number;
+  exactAlarmAllowed: boolean;
+  notificationsEnabled: boolean;
+  fullScreenAllowed: boolean;
+  batteryOptimizationExcluded: boolean;
+  backgroundRestricted: boolean;
+  schedules: { id: string; fireAt: number; repeatDaily: boolean; callTime?: string; timezone?: string }[];
+  events: { stage: string; at: number; id?: string; intendedFireAt?: number; error?: string }[];
+}
+
+export async function readNativeReminderDiagnostics(): Promise<NativeReminderDiagnostics | null> {
+  if (Platform.OS !== 'android' || !nativeModule?.getReminderDiagnostics) return null;
+  return JSON.parse(await nativeModule.getReminderDiagnostics());
+}
+
+export function openReminderAppSettings(): void {
+  nativeModule?.openReminderAppSettings?.();
+}
+
+/** Scheduling must reach the OS; a JS timer/headless callback cannot own a closed-app ring. */
+export async function scheduleNativeCall(options: {
+  id: string;
+  payload: RingPayload;
+  fireAt: number;
+  repeatDaily: boolean;
+  callTime?: string;
+  timezone?: string;
+}): Promise<number> {
+  if (!nativeModule?.scheduleIncomingCall) {
+    throw new Error('Install the updated Android/iOS build to enable reminders while the app is closed.');
+  }
+  return nativeModule.scheduleIncomingCall(JSON.stringify({
+    ...options,
+    payload: JSON.parse(nativePayloadJson(options.payload)),
+  }));
+}
+
+export async function cancelNativeScheduledCall(id: string): Promise<void> {
+  await nativeModule?.cancelScheduledCall?.(id);
+}
 
 function parse(json: string | null | undefined): RingPayload | null {
   if (!json) return null;

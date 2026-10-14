@@ -15,6 +15,7 @@ jest.mock('@/embedded/runtime', () => {
 });
 
 import { api, ApiError, deliverVapiMessage, setApiSecret, setApiUser } from '@/api/client';
+import { CONSENT_VERSION } from '@/i18n/strings';
 import { CallBridge } from '@/embedded/vapi';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -52,7 +53,7 @@ describe('on the phone', () => {
     // Logging in needs no profile selected yet, and finds the account whatever the case.
     setApiUser(null);
     setApiSecret(null);
-    await expect(api.login('KAVYA', 'a long password')).resolves.toEqual(created.profile);
+    await expect(api.login('KAVYA', 'a long password')).resolves.toEqual({ profile: created.profile, secret: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) });
     await expect(api.login('Kavya', 'a long passworD')).rejects.toMatchObject({ status: 401, code: 'invalid_credentials' });
     await expect(api.register('kavya', 'another password')).rejects.toMatchObject({ status: 409, code: 'name_taken' });
     // What the account made at registration is the same profile the app then selects.
@@ -126,6 +127,21 @@ describe('on the phone', () => {
     setApiSecret(secret);
     await expect(api.getHealthProfile()).resolves.toBeTruthy();
     expect(profile.name).toBe('Kiran');
+  });
+
+  it('keeps personal details across restarts and saves edited values', async () => {
+    const { profile, secret } = await newProfile('Personal details');
+    const saved = await api.saveHealthProfile({ profile: { birthYear: 1990, birthMonth: 3, sexForCalc: 'female', heightCm: 165, weightKg: 62, activity: 'low_active', goal: 'maintain' },
+      safety: { pregnantOrBreastfeeding: false, eatingDisorder: false, clinicianDiet: false, dietInteractingMedicine: false }, consentVersion: CONSENT_VERSION });
+    expect(saved.profile.mode).toBe('personalised');
+    mockBackend = createEmbedded(driver, 'tok');
+    setApiUser(profile.id);
+    setApiSecret(secret);
+    expect((await api.getHealthProfile()).profile).toMatchObject({ mode: 'personalised', birthYear: 1990, heightCm: 165, weightKg: 62 });
+    const edited = await api.saveHealthProfile({ profile: { birthYear: 1991, birthMonth: null, weightKg: 64 } });
+    expect(edited.profile).toMatchObject({ mode: 'personalised', birthYear: 1991, heightCm: 165, weightKg: 64 });
+    expect(edited.profile.birthMonth).toBeUndefined();
+    expect((await api.getHealthProfile()).profile).toEqual(edited.profile);
   });
 
   it('survives an app restart: the same file, migrated again, still has the data', async () => {
@@ -219,6 +235,21 @@ describe('a voice call on the phone', () => {
     const row = driver.run('SELECT transcript, duration_seconds FROM calls WHERE user_id = ?1 AND vapi_call_id = ?2', [profile.id, 'vapi-call-1']).rows[0]!;
     expect(row.transcript).toBe('AI: What did you have for breakfast?\nUser: Two idlis and a cup of tea.');
     expect(typeof row.duration_seconds).toBe('number');
+  });
+
+  it('marks the day complete through the on-device bridge only after confirmation', async () => {
+    await newProfile('Complete caller');
+    const started = await startCall();
+    const bridge = new CallBridge({ callRowId: started.callId, localDate: started.localDate, deliver: deliverVapiMessage });
+    const mark = (id: string, confirmed: boolean) => ({ type: 'tool-calls', toolCallList: [{ id, function: { name: 'mark_day_complete', arguments: { confirmed } } }] });
+    await bridge.onMessage(mark('declined', false));
+    expect((await api.getDay(started.localDate)).status).toBeNull();
+    await bridge.onMessage(mark('confirmed', true));
+    expect((await api.getDay(started.localDate)).status).toBe('complete');
+    await api.setDayStatus(started.localDate, 'partial');
+    await bridge.onMessage(mark('confirmed', true));
+    expect((await api.getDay(started.localDate)).status).toBe('partial');
+    await bridge.finish('assistant-ended-call');
   });
 
   it('finds the call by metadata when the save arrives before Vapi has named the call', async () => {

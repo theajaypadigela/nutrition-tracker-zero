@@ -5,7 +5,7 @@ import { TabBar } from '@/components/layout/TabBar';
 import { useProfile } from '@/state/ProfileContext';
 import { useTheme } from '@/theme';
 import type { RootStackParamList, TabParamList } from './types';
-import LoginScreen from '@/screens/LoginScreen';
+import LoginScreen, { ReauthenticateScreen } from '@/screens/LoginScreen';
 import RegisterScreen from '@/screens/RegisterScreen';
 import OnboardingScreen from '@/screens/OnboardingScreen';
 import TodayScreen from '@/screens/TodayScreen';
@@ -31,7 +31,6 @@ import GoalStepScreen from '@/screens/profile/GoalStepScreen';
 import PatternScreen from '@/screens/profile/PatternScreen';
 import ReviewScreen from '@/screens/profile/ReviewScreen';
 import { ReferenceOnlyScreen, Under19Screen } from '@/screens/profile/EndScreens';
-import { RecoveryCodeScreen, RecoveryEntryScreen } from '@/screens/profile/RecoveryScreens';
 import { navigationRef } from './ref';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -51,18 +50,18 @@ function MainTabs() {
 }
 
 export default function RootNavigator() {
-  const { profile, onboarding, recoveryCode, healthIntroPending, consumeHealthIntro } = useProfile();
+  const { profile, onboarding, healthIntroPending, consumeHealthIntro } = useProfile();
   const { colors } = useTheme();
 
   // A new profile, once its call is set up, is offered personal targets once. Skipping is safe: a card stays on Today.
   useEffect(() => {
-    if (!profile || onboarding || recoveryCode || !healthIntroPending) return undefined;
+    if (!profile || onboarding || !healthIntroPending) return undefined;
     const timer = setTimeout(() => {
       consumeHealthIntro();
       if (navigationRef.isReady()) navigationRef.navigate('HealthIntro');
     }, 400);
     return () => clearTimeout(timer);
-  }, [profile, onboarding, recoveryCode, healthIntroPending, consumeHealthIntro]);
+  }, [profile, onboarding, healthIntroPending, consumeHealthIntro]);
 
   // Every screen draws its own header (see StackScreen / TabScreen), so the stack has none.
   return (
@@ -72,9 +71,6 @@ export default function RootNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>
-      ) : recoveryCode && onboarding ? (
-        // A new profile's secret is shown once, before anything else, as a recovery code.
-        <Stack.Screen name="RecoveryCode" component={RecoveryCodeScreen} />
       ) : onboarding ? (
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       ) : (
@@ -100,8 +96,7 @@ export default function RootNavigator() {
           <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />
           <Stack.Screen name="Nutrient" component={NutrientScreen} />
           <Stack.Screen name="Targets" component={TargetsScreen} />
-          <Stack.Screen name="RecoveryCode" component={RecoveryCodeScreen} />
-          <Stack.Screen name="RecoveryEntry" component={RecoveryEntryScreen} />
+          <Stack.Screen name="Reauthenticate" component={ReauthenticateScreen} />
           <Stack.Screen name="HealthIntro" component={HealthIntroScreen} />
           <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />
           <Stack.Screen name="AboutYou" component={AboutYouScreen} />

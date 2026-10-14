@@ -409,3 +409,72 @@ describe('the weight line and the plan check (plan 5.7, Phase 5)', () => {
     expect((await report(p.userId, p.secret)).body.calibration).toBeNull();
   });
 });
+
+describe('recorded intake over an inclusive date range', () => {
+  const getRange = (p: { userId: string; secret: string }, from: string, to = from) =>
+    api('GET', `/reports/range?from=${from}&to=${to}`, p);
+
+  it('includes every stored nutrient, scales units and quantities, and distinguishes missing values from zero', async () => {
+    const p = await createProfileWithSecret();
+    const { NUTRIENTS } = await import('../../src/domain/nutrients');
+    const nutrients = Object.fromEntries(NUTRIENTS.map((n, i) => [n.key, i === 0 ? 100 : i === 1 ? 0 : i]));
+    const food = (await api('POST', '/foods', { body: { displayName: unique('all nutrients'), baseUnit: '100 g', nutrients } })).body.food;
+    await logDay(p.userId, DATES[0]!, [], [{ name: food.displayName, quantity: 150, unit: 'g' }]);
+    await logDay(p.userId, DATES[2]!, [], [{ name: food.displayName, quantity: 50, unit: 'g' }, { name: unique('unknown food') }]);
+    await logDay(p.userId, addDays(WEEK, -1), [food.displayName]);
+    const res = await getRange(p, DATES[0]!, DATES[2]!);
+    expect(res.status).toBe(200);
+    expect(res.body.coverage).toMatchObject({ calendarDays: 3, loggedDays: 2, itemCount: 3, pendingItems: 1 });
+    expect(res.body.nutrients.map((n: any) => n.nutrient)).toEqual(NUTRIENTS.map(n => n.key));
+    for (const n of res.body.nutrients) {
+      expect(n).toMatchObject({ total: nutrients[n.nutrient] * 2, meanPerLoggedDay: nutrients[n.nutrient], knownItems: 2, missingItems: 1, isLowerBound: true });
+    }
+    const other = await createProfileWithSecret();
+    expect((await getRange(other, DATES[0]!, DATES[2]!)).body.nutrients.every((n: any) => n.total === null)).toBe(true);
+  });
+
+  it('counts incomplete and current days, excludes skipped days, and recalculates corrected foods', async () => {
+    const p = await createProfileWithSecret();
+    const food = (await api('POST', '/foods', { body: { displayName: unique('range food'), baseUnit: 'serving', nutrients: { calories: 100, vitaminD: 0 } } })).body.food;
+    await logDay(p.userId, DATES[0]!, [food.displayName]);
+    await logDay(p.userId, DATES[1]!, [food.displayName]);
+    await api('PUT', `/days/${DATES[1]}/status`, { ...p, body: { status: 'skip' } });
+    const res = await getRange(p, DATES[0]!, DATES[1]!);
+    expect(res.body.coverage).toMatchObject({ loggedDays: 1, skippedDays: 1 });
+    expect(n(res, 'calories').total).toBe(100);
+    expect(n(res, 'vitaminD').total).toBe(0);
+    expect(n(res, 'vitaminC')).toMatchObject({ total: null, missingItems: 1 });
+    const updated = await api('PATCH', `/foods/${food.id}`, { body: { nutrients: { calories: 120, vitaminC: 2 } } });
+    expect(updated.status).toBe(200);
+    expect(n(await getRange(p, DATES[0]!, DATES[1]!), 'calories').total).toBe(120);
+    await logDay(p.userId, TODAY, [food.displayName]);
+    expect(n(await getRange(p, TODAY), 'calories').total).toBe(120);
+    expect((await getRange(p, TODAY, addDays(TODAY, 7))).body.range.through).toBe(TODAY);
+  });
+
+  it('handles leap years, full years and custom ranges without a weekly or monthly limit', async () => {
+    const p = await createProfileWithSecret();
+    for (const [from, to, days] of [['2024-02-01', '2024-02-29', 29], ['2024-01-01', '2024-12-31', 366], ['2023-12-31', '2025-01-01', 368]] as const) {
+      const res = await getRange(p, from, to);
+      expect(res.status).toBe(200);
+      expect(res.body.coverage.calendarDays).toBe(days);
+      expect(res.body.nutrients.every((n: any) => n.total === null && n.meanPerLoggedDay === null)).toBe(true);
+    }
+    for (const query of ['from=nope&to=2024-01-01', 'from=2024-02-30&to=2024-03-01', 'from=2024-02-02&to=2024-02-01', 'from=2999-01-01&to=2999-12-31', 'from=2024-01-01']) {
+      expect((await api('GET', `/reports/range?${query}`, p)).status).toBe(400);
+    }
+  });
+
+  it('uses the existing profile access rules and never exposes hidden amounts', async () => {
+    const p = await onboard({}, { eatingDisorder: true });
+    await logDay(p.userId, WEEK, (await seedFoods()).map(f => f.name));
+    expect((await api('GET', `/reports/range?from=${WEEK}&to=${WEEK}`, { userId: p.userId })).body.error.code).toBe('profile_secret_required');
+    expect((await getRange({ ...p, secret: 'x'.repeat(43) }, WEEK)).body.error.code).toBe('profile_secret_invalid');
+    const res = await getRange(p, WEEK);
+    expect(res.status).toBe(200);
+    expect(res.body.display.numbersHidden).toBe(true);
+    expect(res.body.nutrients).toEqual([]);
+    expect(res.text).not.toMatch(/1800|2520|meanPerLoggedDay/);
+    expect((await api('GET', `/reports/range?from=${WEEK}&to=${WEEK}`, { token: null })).status).toBe(401);
+  });
+});

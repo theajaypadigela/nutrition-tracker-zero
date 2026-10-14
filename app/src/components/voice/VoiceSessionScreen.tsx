@@ -13,7 +13,7 @@ import { Mic, Phone, PhoneOff, RotateCw } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, EmptyState, LEAF_PATH, Text } from '@/components/kit';
-import type { TranscriptLine } from '@/hooks/useVapiCall';
+import type { TranscriptLine } from '@/services/voice/types';
 import type { AudioRoute, CallAudioState } from '@/services/calls/audioRoute';
 import { createStyles, FocusAwareStatusBar, hairline, radius, size, space, useTheme } from '@/theme';
 import { AudioRouteControl } from './AudioRouteControl';

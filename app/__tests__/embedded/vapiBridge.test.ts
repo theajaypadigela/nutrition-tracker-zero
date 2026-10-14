@@ -105,6 +105,21 @@ describe('CallBridge', () => {
     expect(bridge.finished).toBe(true);
   });
 
+  it('delivers completion after meal saves and before the report, once across client messages', async () => {
+    const { bridge, sent, unblock } = make();
+    const mark = { id: 'complete-1', function: { name: 'mark_day_complete', arguments: { confirmed: true } } };
+    bridge.onMessage(LIVE_TOOL_CALLS);
+    bridge.onMessage({ type: 'tool-calls', toolCallList: [mark] });
+    bridge.onMessage({ type: 'conversation-update', conversation: [{ role: 'assistant', tool_calls: [mark] }] });
+    const done = bridge.finish('assistant-ended-call');
+    unblock();
+    await done;
+    expect(sent).toHaveLength(3);
+    expect(sent[0].message.toolCallList[0].function.name).toBe('save_foods');
+    expect(sent[1].message.toolCallList[0].function).toEqual({ name: 'mark_day_complete', arguments: { confirmed: true } });
+    expect(sent[2].message.type).toBe('end-of-call-report');
+  });
+
   it('survives a failing delivery: the call carries on and a later report still goes out', async () => {
     let calls = 0;
     const bridge = new CallBridge({

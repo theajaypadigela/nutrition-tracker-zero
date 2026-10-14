@@ -9,12 +9,12 @@ import TestRenderer, { act, type ReactTestInstance } from 'react-test-renderer';
 jest.mock('@react-navigation/native', () => {
   const react = jest.requireActual('react');
   const nav = { navigate: jest.fn(), goBack: jest.fn(), canGoBack: jest.fn(() => true) };
-  return { useNavigation: () => nav, useIsFocused: () => true, useRoute: jest.fn(() => ({ params: {} })), useFocusEffect: (effect: () => void) => react.useEffect(effect, [effect]) };
+  return { useNavigation: () => nav, useIsFocused: () => true, useRoute: jest.fn(() => ({ params: {} })), useFocusEffect: (effect: () => void) => react.useEffect(effect, [effect]), __nav: nav };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
 jest.mock('@/state/ProfileContext', () => ({ useProfile: () => ({ profile: { id: 'u1', name: 'Asha Rao' }, selectProfile: jest.fn() }) }));
-jest.mock('@/state/HealthContext', () => ({ useHealth: () => ({ profile: null, status: 'ready', numbersHidden: false, apply: jest.fn(), refresh: jest.fn() }) }));
+jest.mock('@/state/HealthContext', () => ({ useHealth: jest.fn(() => ({ profile: null, status: 'ready', numbersHidden: false, apply: jest.fn(), refresh: jest.fn() })) }));
 jest.mock('@/services/calls/reconcile', () => ({ armTestCall: jest.fn() }));
 jest.mock('@/services/calls/schedule', () => ({ applySchedule: jest.fn(async () => {}) }));
 jest.mock('@/services/calls/scheduleStore', () => ({ loadLastRing: jest.fn(async () => null) }));
@@ -28,6 +28,7 @@ jest.mock('@/api/client', () => ({
 
 import * as RN from 'react-native';
 import { api } from '@/api/client';
+import { useHealth } from '@/state/HealthContext';
 import SettingsScreen from '@/screens/SettingsScreen';
 import { ThemeProvider, useTheme } from '@/theme';
 import { darkPalette, lightPalette } from '@/theme/palette';
@@ -134,5 +135,19 @@ describe('Appearance, when the settings cannot be loaded', () => {
     });
     expect(bg).toBe(darkPalette.bg);
     expect(await AsyncStorage.getItem('ntz.theme.v1')).toBe('dark');
+  });
+});
+
+describe('Personal details, in Profile', () => {
+  it('shows saved values and opens the existing edit flow', async () => {
+    (useHealth as jest.Mock).mockReturnValue({ mode: 'personalised', profile: { birthYear: 1990, heightCm: 165, weightKg: 62 }, numbersHidden: false, status: 'ready' });
+    await act(async () => { tree.update(<ThemeProvider><SettingsScreen /></ThemeProvider>); });
+    const text = all(tree);
+    expect(text).toContain('1990');
+    expect(text).toContain('165 cm');
+    expect(text).toContain('62 kg');
+    const edit = tree.root.findAll(n => n.props.testID === 'settings-edit-personal' && typeof n.props.onPress === 'function')[0]!;
+    await act(async () => { edit.props.onPress(); });
+    expect(jest.requireMock('@react-navigation/native').__nav.navigate).toHaveBeenCalledWith('HealthIntro');
   });
 });

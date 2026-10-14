@@ -50,8 +50,9 @@ class IncomingCallService : Service() {
         // the call notification (its full-screen intent can ring via the Activity) so the call
         // isn't lost — it just won't have the service-owned ringer.
         Log.w(TAG, "FGS start blocked; falling back to notification only", e)
+        ReminderDiagnostics.record(context, "service_start_blocked", error = e)
         IncomingCallPayload.fromJson(payloadJson)?.let {
-          CallNotificationBuilder.post(context.applicationContext, it)
+          CallNotificationBuilder.postFallback(context.applicationContext, it)
         }
       }
     }
@@ -91,12 +92,23 @@ class IncomingCallService : Service() {
       // Could not enter the foreground (rare: type/permission mismatch). Post the notification so
       // the full-screen intent still rings via the Activity, then bail.
       Log.w(TAG, "startForeground failed; posting notification only", e)
-      CallNotificationBuilder.post(applicationContext, payload)
+      ReminderDiagnostics.record(this, "foreground_rejected", error = e)
+      CallNotificationBuilder.postFallback(applicationContext, payload)
       stopSelf()
       return START_NOT_STICKY
     }
 
-    Ringer.start(this)
+    ReminderDiagnostics.record(this, "foreground_started")
+    try {
+      Ringer.start(this)
+      ReminderDiagnostics.record(this, "ringer_started")
+    } catch (e: Exception) {
+      ReminderDiagnostics.record(this, "ringer_failed", error = e)
+      Log.w(TAG, "Ringer failed; using audible notification", e)
+      teardown(removeNotification = true)
+      CallNotificationBuilder.postFallback(applicationContext, payload)
+      return START_NOT_STICKY
+    }
     scheduleTimeout()
     return START_NOT_STICKY
   }

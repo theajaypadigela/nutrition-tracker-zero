@@ -115,6 +115,12 @@ private final class IncomingCallCoordinator: NSObject, CXProviderDelegate, PKPus
     }
   }
 
+  func answerLocalReminder(_ json: String) {
+    guard let payload = IncomingCallPayload(json: json) else { return }
+    store.setPendingAnswer(json)
+    onMain { [weak self] in self?.eventSink?(.answered, payload, .answered) }
+  }
+
   private func presentOnMain(
     _ payload: IncomingCallPayload,
     mustReport: Bool,
@@ -585,6 +591,10 @@ enum IncomingCallBootstrap {
   static func startPushKit() {
     IncomingCallCoordinator.shared.startPushRegistry()
   }
+
+  static func answerLocalReminder(_ json: String) {
+    IncomingCallCoordinator.shared.answerLocalReminder(json)
+  }
 }
 
 /// React Native bridge. The method names and persisted return values intentionally match the
@@ -645,6 +655,24 @@ final class IncomingCallModule: RCTEventEmitter {
   @objc
   func dismissIncomingCall() {
     coordinator.dismiss()
+  }
+
+  @objc(scheduleIncomingCall:resolver:rejecter:)
+  func scheduleIncomingCall(_ optionsJson: String, resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock) {
+    NativeCallScheduler.shared.schedule(optionsJson) { result in
+      switch result {
+      case .success(let fireAt): resolve(fireAt)
+      case .failure(let error): reject("reminder_schedule_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(cancelScheduledCall:resolver:rejecter:)
+  func cancelScheduledCall(_ id: String, resolver resolve: RCTPromiseResolveBlock,
+    rejecter reject: RCTPromiseRejectBlock) {
+    do { try NativeCallScheduler.shared.cancel(id); resolve(nil) }
+    catch { reject("reminder_cancel_failed", error.localizedDescription, error) }
   }
 
   @objc(consumePendingAnswer:rejecter:)

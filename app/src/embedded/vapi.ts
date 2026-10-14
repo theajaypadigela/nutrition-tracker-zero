@@ -6,6 +6,7 @@
  */
 
 export const SAVE_FOODS = 'save_foods';
+export const MARK_DAY_COMPLETE = 'mark_day_complete';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -21,14 +22,14 @@ export interface SaveFoodsCall {
  * `conversation-update` carries the same call, so it is read too, in case Vapi's client message is ever missing: the bridge
  * remembers what it has handled, so seeing a call twice never saves twice.
  */
-export function saveFoodsCallsOf(msg: unknown): SaveFoodsCall[] {
+export function voiceToolCallsOf(msg: unknown): (SaveFoodsCall & { name: string })[] {
   if (!isObj(msg)) return [];
-  const out: SaveFoodsCall[] = [];
+  const out: (SaveFoodsCall & { name: string })[] = [];
   const take = (tc: unknown) => {
     if (!isObj(tc)) return;
     const fn = isObj(tc.function) ? tc.function : tc;
-    if (fn.name !== SAVE_FOODS) return;
-    out.push({ id: typeof tc.id === 'string' && tc.id ? tc.id : null, arguments: fn.arguments ?? fn.parameters });
+    if (fn.name !== SAVE_FOODS && fn.name !== MARK_DAY_COMPLETE) return;
+    out.push({ name: fn.name, id: typeof tc.id === 'string' && tc.id ? tc.id : null, arguments: fn.arguments ?? fn.parameters });
   };
   if (msg.type === 'tool-calls') {
     if (Array.isArray(msg.toolCallList)) msg.toolCallList.forEach(take);
@@ -38,6 +39,11 @@ export function saveFoodsCallsOf(msg: unknown): SaveFoodsCall[] {
     for (const turn of history) if (isObj(turn) && turn.role === 'assistant' && Array.isArray(turn.tool_calls)) turn.tool_calls.forEach(take);
   }
   return out;
+}
+
+/** Compatibility helper for callers interested only in meal saves. */
+export function saveFoodsCallsOf(msg: unknown): SaveFoodsCall[] {
+  return voiceToolCallsOf(msg).filter(call => call.name === SAVE_FOODS).map(({ id, arguments: args }) => ({ id, arguments: args }));
 }
 
 export interface BridgeOptions {
@@ -79,13 +85,13 @@ export class CallBridge {
     if (msg.type === 'transcript' && msg.transcriptType === 'final' && typeof msg.transcript === 'string') {
       this.lines.push(`${msg.role === 'user' ? 'User' : 'AI'}: ${msg.transcript}`);
     }
-    for (const call of saveFoodsCallsOf(msg)) {
-      const key = call.id ?? `args:${typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments)}`;
+    for (const call of voiceToolCallsOf(msg)) {
+      const key = call.id ?? `${call.name}:args:${typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments)}`;
       if (this.handled.has(key)) continue;
       this.handled.add(key);
       const id = call.id ?? `device-${this.o.callRowId}-${++this.sent}`;
       const payload = {
-        message: { ...this.base('tool-calls'), toolCallList: [{ id, function: { name: SAVE_FOODS, arguments: call.arguments } }] },
+        message: { ...this.base('tool-calls'), toolCallList: [{ id, function: { name: call.name, arguments: call.arguments } }] },
       };
       // If this fails the outcome reads "no list saved" and offers the manual form.
       this.queue = this.queue.then(() => this.o.deliver(payload)).then(() => undefined, () => undefined);

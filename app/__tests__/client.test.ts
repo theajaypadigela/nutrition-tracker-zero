@@ -93,12 +93,35 @@ describe('api client', () => {
     expect(JSON.parse(init.body)).toEqual({ username: 'Asha', password: 'a long password' });
   });
 
-  it('login posts the username and password and returns just the profile', async () => {
-    respond(200, { profile: { id: 'u', name: 'Asha' } });
-    await expect(api.login('asha', 'a long password')).resolves.toEqual({ id: 'u', name: 'Asha' });
+  it('login returns the profile and the credential needed for saved personal data', async () => {
+    setApiUser('previous-user');
+    setApiSecret('x'.repeat(43));
+    respond(200, { profile: { id: 'u', name: 'Asha' }, secret: 's'.repeat(43) });
+    respond(200, { profile: { mode: 'generic' }, targetSet: null });
+    await expect(api.login('asha', 'a long password')).resolves.toEqual({ profile: { id: 'u', name: 'Asha' }, secret: 's'.repeat(43) });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.test/auth/login');
     expect(JSON.parse(init.body)).toEqual({ username: 'asha', password: 'a long password' });
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.test/me/profile');
+    expect(fetchMock.mock.calls[1][1].headers).toMatchObject({ 'x-user-id': 'u', 'x-profile-secret': 's'.repeat(43) });
+    // Preflight must not replace the active account before ProfileProvider has saved the new credential.
+    respond(200, { profiles: [] });
+    await api.listProfiles();
+    expect(fetchMock.mock.calls[2][1].headers).toMatchObject({ 'x-user-id': 'previous-user', 'x-profile-secret': 'x'.repeat(43) });
+    setApiUser(null);
+    setApiSecret(null);
+  });
+
+  it('rejects an older server’s profile-only login instead of silently reusing the previous credential', async () => {
+    respond(200, { profile: { id: 'u', name: 'Asha' } });
+    await expect(api.login('asha', 'a long password')).rejects.toMatchObject({ code: 'auth_upgrade_required' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps login incomplete when the returned credential cannot read personal settings', async () => {
+    respond(200, { profile: { id: 'u', name: 'Asha' }, secret: 's'.repeat(43) });
+    respond(403, { error: { code: 'profile_secret_invalid', message: 'Account access was refused' } });
+    await expect(api.login('asha', 'a long password')).rejects.toMatchObject({ code: 'profile_secret_invalid' });
   });
 
   it('login surfaces a wrong password as a 401 with its code, so the screen can word it', async () => {
@@ -123,7 +146,6 @@ describe('api client', () => {
     expect(await call(() => api.addWeight(61.5, { confirm: true }))).toMatchObject({ url: '/me/weights', method: 'POST', body: { weightKg: 61.5, confirm: true } });
     expect(await call(() => api.exportHealthData())).toMatchObject({ url: '/me/export', method: 'GET' });
     expect(await call(() => api.updateGoals({ protein: 70 }, 'care_team'))).toMatchObject({ url: '/me/goals', method: 'PUT', body: { goals: { protein: 70 }, origin: 'care_team' } });
-    expect(await call(() => api.claimSecret())).toMatchObject({ url: '/me/secret', method: 'POST' });
     respond(204);
     await api.deleteHealthData();
     expect(fetchMock.mock.calls.at(-1)[0]).toBe('https://api.test/me/health-data');

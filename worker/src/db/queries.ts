@@ -24,6 +24,8 @@ export interface UserRow {
 
 export interface CallRow {
   id: number;
+  voice_provider?: string;
+  provider_call_id?: string | null;
   vapi_call_id: string | null;
   user_id: string;
   local_date: string;
@@ -177,6 +179,8 @@ export function callJson(row: CallRow, withTranscript = false) {
   return {
     id: row.id,
     vapiCallId: row.vapi_call_id,
+    provider: row.voice_provider ?? 'vapi',
+    providerCallId: row.provider_call_id ?? row.vapi_call_id,
     localDate: row.local_date,
     kind: row.kind,
     status: row.status,

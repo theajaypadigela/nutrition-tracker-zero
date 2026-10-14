@@ -21,6 +21,7 @@ import type {
   TargetSetInfo,
   TargetsResponse,
   WeeklyReport,
+  RangeReport,
   WeightEntry,
   Item,
   ItemInput,
@@ -43,6 +44,11 @@ export class ApiError extends Error {
 }
 
 const TIMEOUT_MS = 15_000;
+
+/** Account credentials returned by registration/password login are 32-byte base64url tokens. */
+export const isAccountCredential = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
+
+export const ACCOUNT_ACCESS_UPDATE_REQUIRED = 'The server needs an update to complete login.';
 
 let currentUserId: string | null = null;
 
@@ -101,10 +107,12 @@ async function send(method: string, path: string, headers: Record<string, string
   }
 }
 
-export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown, credentials?: { userId: string; secret: string }): Promise<T> {
   const headers: Record<string, string> = { authorization: `Bearer ${APP_TOKEN}` };
-  if (currentUserId) headers['x-user-id'] = currentUserId;
-  if (currentSecret) headers['x-profile-secret'] = currentSecret;
+  const userId = credentials ? credentials.userId : currentUserId;
+  const secret = credentials ? credentials.secret : currentSecret;
+  if (userId) headers['x-user-id'] = userId;
+  if (secret) headers['x-profile-secret'] = secret;
   if (body !== undefined) headers['content-type'] = 'application/json';
 
   const { status, text } = await send(method, path, headers, body);
@@ -150,17 +158,23 @@ export const api = {
   meta: () => request<Meta>('GET', '/meta'),
 
   listProfiles: () => request<{ profiles: Profile[] }>('GET', '/profiles').then((r) => r.profiles),
-  /** Returns the new profile and its one-time secret: store it in secure storage and show it once as a recovery code. */
+  /** Returns the new profile and its credential, to store automatically in secure storage. */
   createProfile: (name: string, extra: { timezone?: string; callTime?: string | null } = {}) =>
     request<{ profile: Profile; secret: string }>('POST', '/profiles', { name, ...extra }),
   /** Makes an account and its profile. Answers like createProfile: the profile and its one-time secret. 409 `name_taken`; 400 for a short password. */
   register: (username: string, password: string) =>
     request<{ profile: Profile; secret: string }>('POST', '/auth/register', { username, password }),
-  /** The profile for this username and password. 401 `invalid_credentials` for every way of being wrong: it does not say which. */
-  login: (username: string, password: string) =>
-    request<{ profile: Profile }>('POST', '/auth/login', { username, password }).then((r) => r.profile),
-  /** A profile made before secrets existed claims one, once. */
-  claimSecret: () => request<{ secret: string }>('POST', '/me/secret'),
+  /** The account and a credential for its saved data. 401 `invalid_credentials` for every way of being wrong. */
+  login: async (username: string, password: string) => {
+    const account = await request<{ profile: Profile; secret: string }>('POST', '/auth/login', { username, password });
+    // An older server returns only the profile ID. Accepting that as login would reuse a missing/stale credential forever.
+    if (!account?.profile?.id || !isAccountCredential(account.secret)) {
+      throw new ApiError(503, 'auth_upgrade_required', ACCOUNT_ACCESS_UPDATE_REQUIRED);
+    }
+    // Verify access before storing the account or leaving Login. Use the returned identity, never the previous account's headers.
+    await request<ProfileResponse>('GET', '/me/profile', undefined, { userId: account.profile.id, secret: account.secret });
+    return account;
+  },
 
   getSettings: () => request<Settings>('GET', '/me/settings').then(rememberZone),
   updateSettings: (patch: Partial<Pick<Settings, 'name' | 'timezone' | 'callTime' | 'callEnabled'>> & { vapiPublicKey?: string | null }) =>
@@ -199,6 +213,7 @@ export const api = {
   setDayStatus: (date: string, status: DayMark) => request<{ date: string; status: DayMark }>('PUT', `/days/${date}/status`, { status }),
   clearDayStatus: (date: string) => request<void>('DELETE', `/days/${date}/status`),
   /** The whole weekly view for the week containing `start` (a Monday is snapped to), with up to eight weeks of history. */
+  getRangeReport: (from: string, to: string) => request<RangeReport>('GET', `/reports/range?from=${enc(from)}&to=${enc(to)}`),
   getWeeklyReport: (start?: string, weeks?: number) => {
     const q = [start ? `start=${start}` : '', weeks ? `weeks=${weeks}` : ''].filter(Boolean).join('&');
     return request<WeeklyReport>('GET', `/reports/weekly${q ? `?${q}` : ''}`);

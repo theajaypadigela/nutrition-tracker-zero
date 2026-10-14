@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { Alert, Platform, Share, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Button, Card, LoadingState, Notice, Text } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import { useAsync } from '@/hooks/useAsync';
 import { buildHealthReport, type HealthItem, type HealthStatus } from '@/services/calls/health';
+import { readNativeReminderDiagnostics } from '@/services/calls/native';
 import { createStyles, radius, space, useTheme } from '@/theme';
 
 const STATUS_LABEL: Record<HealthStatus, string> = {
@@ -57,7 +58,7 @@ export default function ReminderHealthScreen() {
         degraded ? (
           <Notice tone="warning">The daily call may be late or silent. Fix the items marked below.</Notice>
         ) : (
-          <Notice tone="success">Everything is set. Your daily call will ring on time.</Notice>
+          <Notice tone="success">Reminder permissions are ready. Check the delivery details below.</Notice>
         )
       ) : null}
 
@@ -88,6 +89,15 @@ export default function ReminderHealthScreen() {
           ) : null}
         </Card>
       ))}
+      {Platform.OS === 'android' ? <Button label="Share delivery diagnostics" variant="soft" onPress={async () => {
+        try {
+          const diagnostics = await readNativeReminderDiagnostics();
+          await Share.share({ title: 'Reminder delivery diagnostics', message: diagnostics
+            ? JSON.stringify(diagnostics, null, 2) : 'Native reminder diagnostics are missing. Install the rebuilt APK.' });
+        } catch {
+          Alert.alert('Could not read delivery diagnostics', 'Open Reminder health again and try sharing the delivery details.');
+        }
+      }} /> : null}
     </StackScreen>
   );
 }

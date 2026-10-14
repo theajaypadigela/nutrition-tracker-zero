@@ -14,6 +14,11 @@
     }
   ],
   "vars": {
+    "VOICE_PROVIDER": "deepgram",
+    "DEEPGRAM_STT_MODEL": "nova-3",
+    "DEEPGRAM_STT_LANGUAGE": "multi",
+    "DEEPGRAM_TTS_MODEL": "aura-2-thalia-en",
+    "DEEPGRAM_LLM_MODEL": "gpt-4o-mini",
     // Optional: overrides the request origin when building Vapi webhook URLs (e.g. a cloudflared tunnel during the spike).
     "PUBLIC_BASE_URL": "",
     // "1" shows the Nutrient mix score on the weekly report. Off by default: the report leads with the days that count, the averages, what
@@ -35,5 +40,5 @@
   },
   // Empties call transcripts older than 30 days, once a day (plan 8.3.3).
   "triggers": { "crons": ["17 3 * * *"] },
-  "secrets": { "required": ["APP_TOKEN"] }
+  "secrets": { "required": ["APP_TOKEN", "DEEPGRAM_API_KEY"] }
 }

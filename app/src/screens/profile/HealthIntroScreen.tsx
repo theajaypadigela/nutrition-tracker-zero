@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { UserRound } from 'lucide-react-native';
-import { errorMessage } from '@/api/client';
-import { Button, Card, Icon, Notice, Text } from '@/components/kit';
+import { Button, Card, Icon, LoadingState, Notice, Text } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import { ChoiceCard } from '@/components/health/ChoiceCard';
-import { useEnsureSecret } from '@/hooks/useEnsureSecret';
 import { strings } from '@/i18n/strings';
 import { useHealth } from '@/state/HealthContext';
 import { draftFromProfile, useHealthDraft } from '@/state/HealthDraft';
@@ -18,32 +16,36 @@ const t = strings.health.intro;
 export default function HealthIntroScreen() {
   const navigation = useNavigation();
   const { draft, update, reset } = useHealthDraft();
-  const { profile } = useHealth();
-  const ensureSecret = useEnsureSecret();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { profile, status, error, refresh } = useHealth();
+  const seeded = useRef(false);
 
   // Editing starts from the answers already given; a first run starts empty.
-  React.useEffect(() => {
+  useEffect(() => {
+    // Wait for the saved profile before initializing the form, and never overwrite edits during a background refresh.
+    if (status !== 'ready' || seeded.current) return;
     reset(profile ? draftFromProfile(profile) : undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    seeded.current = true;
+  }, [status, profile, reset]);
 
-  const go = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      if (await ensureSecret()) navigation.navigate('SafetyCheck');
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (status === 'locked' || status === 'mismatch') {
+    return (
+      <StackScreen title={t.title}>
+        <Notice tone="info">{strings.health.targets.locked}</Notice>
+        <Button label={strings.health.settings.unlock} onPress={() => navigation.navigate('Reauthenticate')} />
+      </StackScreen>
+    );
+  }
+  if (status !== 'ready') {
+    return (
+      <StackScreen title={t.title}>
+        {error ? <Notice tone="danger" action={{ label: 'Retry', onPress: refresh }}>{error}</Notice> : <LoadingState />}
+      </StackScreen>
+    );
+  }
 
   return (
     <StackScreen
-      title={t.title}
+      title={profile ? 'Edit personal details' : t.title}
       footer={
         <>
           <Button
@@ -51,9 +53,8 @@ export default function HealthIntroScreen() {
             label={t.continue}
             size="lg"
             fullWidth
-            loading={busy}
             disabled={!draft.consent}
-            onPress={go}
+            onPress={() => navigation.navigate('SafetyCheck')}
           />
           <Button label={t.skip} variant="ghost" fullWidth onPress={() => navigation.goBack()} />
         </>
@@ -65,7 +66,6 @@ export default function HealthIntroScreen() {
           {t.lead}
         </Text>
       </View>
-      {error ? <Notice tone="danger">{error}</Notice> : null}
       {[t.asks, t.why, t.stored, t.who].map(block => (
         <Card key={block.title}>
           <Text variant="bodyStrong">{block.title}</Text>

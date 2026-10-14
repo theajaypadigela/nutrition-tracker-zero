@@ -39,6 +39,8 @@ export async function onRingDelivered(payload: RingPayload, now = Date.now()): P
 export async function handleNotifeeEvent({ type, detail }: Event): Promise<RingPayload | null> {
   const data = detail.notification?.data as Record<string, unknown> | undefined;
   if (type === EventType.DELIVERED) {
+    // iOS owns local reminder delivery and sound in every app state. Tapping starts the call.
+    if (Platform.OS === 'ios') return null;
     const payload = readRingPayload(data);
     if (payload) await onRingDelivered(payload);
     return null;

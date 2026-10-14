@@ -6,6 +6,7 @@
  * the native declined/missed markers.
  */
 import notifee from '@notifee/react-native';
+import { Platform } from 'react-native';
 import { canScheduleExact, readPermissionSnapshot } from './permissions';
 import { ensureChannels } from './channels';
 import { reminderLog } from './logger';
@@ -48,17 +49,23 @@ async function doReconcile(reason: string, opts: { signedIn: boolean; now?: numb
   }
 
   const pending = await notifee.getTriggerNotificationIds().catch(() => [] as string[]);
-  const fireAt = opts.signedIn ? desiredDailyFire(await loadCachedSchedule(), now) : null;
+  const schedule = opts.signedIn ? await loadCachedSchedule() : null;
+  let fireAt = desiredDailyFire(schedule, now);
   const exact = canScheduleExact(await readPermissionSnapshot());
 
   if (fireAt !== null) {
-    await armRing({ id: DAILY_TRIGGER_ID, callKind: 'scheduled', fireAt, repeatDaily: true, exact });
+    fireAt = await armRing({ id: DAILY_TRIGGER_ID, callKind: 'scheduled', fireAt, repeatDaily: true, exact,
+      callTime: schedule!.callTime!, timezone: schedule!.timezone });
+  } else {
+    // Native alarms aren't listed by Notifee. Disable/sign-out must cancel them explicitly.
+    await cancelRing(DAILY_TRIGGER_ID);
   }
+  if (!opts.signedIn) await cancelRing(TEST_TRIGGER_ID);
   const pruned: string[] = [];
   for (const id of pending) {
-    const keep = (id === DAILY_TRIGGER_ID && fireAt !== null) || (id === TEST_TRIGGER_ID && opts.signedIn);
-    if (isAppOwnedTriggerId(id) && !keep) {
-      await cancelRing(id);
+    // Remove all legacy JS-dependent triggers; current rings belong to native scheduling.
+    if (isAppOwnedTriggerId(id)) {
+      await notifee.cancelTriggerNotification(id);
       pruned.push(id);
     }
   }
@@ -68,8 +75,12 @@ async function doReconcile(reason: string, opts: { signedIn: boolean; now?: numb
 
 /** Rings the phone through the real alarm → native ring → answer path in ~5 seconds. */
 export async function armTestCall(delayMs = 5_000): Promise<number> {
-  const exact = canScheduleExact(await readPermissionSnapshot());
+  const snapshot = await readPermissionSnapshot();
+  if (!snapshot.notificationsAuthorized) throw new Error('Allow notifications before testing reminder delivery.');
+  if (Platform.OS === 'android' && snapshot.exactAlarm === 'denied') {
+    throw new Error('Allow Alarms & reminders in Reminder health before testing. Without this permission Android can delay or block the background call.');
+  }
+  const exact = canScheduleExact(snapshot);
   const fireAt = Date.now() + delayMs;
-  await armRing({ id: TEST_TRIGGER_ID, callKind: 'test', fireAt, repeatDaily: false, exact });
-  return fireAt;
+  return armRing({ id: TEST_TRIGGER_ID, callKind: 'test', fireAt, repeatDaily: false, exact });
 }

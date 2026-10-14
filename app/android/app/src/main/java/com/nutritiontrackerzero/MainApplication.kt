@@ -7,6 +7,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import io.invertase.notifee.NotifeePackage
+import com.nutritiontrackerzero.voicepcm.VoicePcmPackage
 import com.nutritiontrackerzero.callaudio.CallAudioPackage
 import com.nutritiontrackerzero.incomingcall.IncomingCallPackage
 
@@ -21,6 +22,7 @@ class MainApplication : Application(), ReactApplication {
           add(SystemRingtonePackage())
           add(IncomingCallPackage())
           add(CallAudioPackage())
+          add(VoicePcmPackage())
         },
     )
   }

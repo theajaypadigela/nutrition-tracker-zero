@@ -5,6 +5,7 @@
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { hashPassword, PASSWORD_ITERATIONS, verifyPassword } from '../../src/auth';
+import worker from '../../src/index';
 import { api, unique } from '../helpers';
 
 const PASSWORD = 'correct horse battery';
@@ -120,14 +121,68 @@ describe('POST /auth/register', () => {
 });
 
 describe('POST /auth/login', () => {
+  it('restores all personal settings and calculated targets on a fresh login, including reports and hardened routes', async () => {
+    const name = unique('Targets');
+    const created = await register(name);
+    const userId = created.body.profile.id;
+    const profile = { birthYear: 1990, birthMonth: 3, sexForCalc: 'female', heightCm: 180, weightKg: 89, activity: 'inactive', goal: 'maintain', pace: 'gentle', pattern: 'vegan', referenceSet: 'nasem', numbersHidden: false };
+    const safety = { pregnantOrBreastfeeding: false, eatingDisorder: false, clinicianDiet: false, dietInteractingMedicine: true };
+    const saved = await api('PUT', '/me/profile', { userId, secret: created.body.secret, body: { profile, safety, consentVersion: '2026-10-v3' } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.targetSet.targets.find((t: any) => t.nutrient === 'protein').value).toBe(89);
+    const loggedIn = await login(name, PASSWORD);
+    const opts = { userId, secret: loggedIn.body.secret };
+    expect((await api('GET', '/me/profile', opts)).body.profile).toMatchObject({ ...profile, dietInteractingMedicine: true });
+    expect((await api('GET', '/me/goals', opts)).body.goals.find((g: any) => g.key === 'protein')).toMatchObject({ target: 89, recommended: 89 });
+    expect((await api('GET', '/days/2026-10-14', opts)).body.goals.protein).toBe(89);
+    expect((await api('GET', '/me/targets', opts)).body.targets.find((t: any) => t.nutrient === 'protein').value).toBe(89);
+    expect((await api('GET', '/reports/weekly', opts)).body.mode).toBe('personalised');
+    expect((await api('PUT', '/me/goals', { ...opts, body: { goals: { protein: 95 } } })).status).toBe(200);
+    expect((await api('GET', '/days/2026-10-14', opts)).body.goals.protein).toBe(95);
+    const hardened = await worker.fetch(new Request('https://zero.example/me/settings', {
+      headers: { authorization: 'Bearer test-app-token', 'x-user-id': userId, 'x-profile-secret': opts.secret },
+    }), { ...env, REQUIRE_SECRET: '1' } as unknown as Env);
+    expect(hardened.status).toBe(200);
+    // Erasing health data leaves the account signed in; erasing the account removes every session.
+    expect((await api('DELETE', '/me/health-data', opts)).status).toBe(204);
+    expect((await api('GET', '/me/profile', opts)).body.profile.mode).toBe('generic');
+    expect((await api('DELETE', '/me', opts)).status).toBe(204);
+    expect((await env.DB.prepare('SELECT token_hash FROM account_sessions WHERE user_id = ?').bind(userId).all()).results).toEqual([]);
+  });
+
+  it('keeps login credentials scoped to the authenticated account and issues none for a wrong password', async () => {
+    const a = await register(unique('AccountA'));
+    const b = await register(unique('AccountB'));
+    const loggedIn = await login(a.body.profile.name, PASSWORD);
+    expect((await api('GET', '/me/profile', { userId: b.body.profile.id, secret: loggedIn.body.secret })).status).toBe(403);
+    expect((await api('GET', '/me/profile', { userId: a.body.profile.id, secret: b.body.secret })).status).toBe(403);
+    expect((await login(a.body.profile.name, 'wrong password')).status).toBe(401);
+    expect((await env.DB.prepare('SELECT token_hash FROM account_sessions WHERE user_id = ?').bind(a.body.profile.id).all()).results).toHaveLength(1);
+  });
+
+  it('lets password accounts with a missing legacy credential read their saved data', async () => {
+    const created = await register(unique('NoLegacySecret'));
+    await env.DB.prepare('UPDATE users SET secret_hash = NULL WHERE id = ?').bind(created.body.profile.id).run();
+    const loggedIn = await login(created.body.profile.name, PASSWORD);
+    expect((await api('GET', '/me/profile', { userId: created.body.profile.id, secret: loggedIn.body.secret })).status).toBe(200);
+  });
+
   it('returns the profile for the right username and password', async () => {
     const name = unique('Ravi');
     const created = await register(name);
     const res = await login(name, PASSWORD);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ profile: created.body.profile });
-    // The login hands out no secret: the one made at registration is the only one, and stays with the phone that holds it.
-    expect(res.body.secret).toBeUndefined();
+    expect(res.body).toEqual({ profile: created.body.profile, secret: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) });
+    const opts = { userId: res.body.profile.id, secret: res.body.secret };
+    expect((await api('GET', '/me/profile', opts)).status).toBe(200);
+    // A second phone's login must keep the first phone and existing installations signed in.
+    const second = await login(name, PASSWORD);
+    expect(second.body.secret).not.toBe(res.body.secret);
+    expect((await api('GET', '/me/profile', opts)).status).toBe(200);
+    expect((await api('GET', '/me/profile', { ...opts, secret: created.body.secret })).status).toBe(200);
+    const stored = await env.DB.prepare('SELECT token_hash FROM account_sessions WHERE user_id = ?').bind(opts.userId).all<{ token_hash: string }>();
+    expect(stored.results).toHaveLength(2);
+    expect(JSON.stringify(stored.results)).not.toContain(res.body.secret);
   });
 
   it('ignores the username\'s case and stray spaces, and returns the name as it was registered', async () => {

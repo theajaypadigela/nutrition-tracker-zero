@@ -168,7 +168,7 @@ export default function TargetsScreen() {
   const [error, setError] = useState<string | null>(null);
   const res = useAsync(
     () => (health.status === 'ready' ? api.getTargets() : Promise.resolve(null)),
-    [health.status, health.targetSet?.id],
+    [health.status, health.revision, health.targetSet?.id],
   );
   useFocusEffect(
     useCallback(() => {
@@ -184,6 +184,7 @@ export default function TargetsScreen() {
   const reset = async (key: string) => {
     try {
       await api.updateGoals({ [key]: null });
+      await health.refresh();
       await res.reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -216,7 +217,7 @@ export default function TargetsScreen() {
       {health.status === 'locked' || health.status === 'mismatch' ? (
         <>
           <Notice tone="info">{t.locked}</Notice>
-          <Button label={strings.health.settings.unlock} onPress={() => navigation.navigate('RecoveryEntry')} />
+          <Button label={strings.health.settings.unlock} onPress={() => navigation.navigate('Reauthenticate')} />
         </>
       ) : null}
 

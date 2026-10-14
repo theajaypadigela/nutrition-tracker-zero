@@ -7,7 +7,7 @@ import notifee, { AndroidImportance, AndroidVisibility } from '@notifee/react-na
 import { Platform } from 'react-native';
 import { reminderLog } from './logger';
 
-/** Silent alarm carrier: fires the trigger and the DELIVERED event, then is cancelled. */
+/** Legacy silent alarm carrier, retained for upgrades; new rings use native scheduling. */
 export const CALL_HEARTBEAT_CHANNEL_ID = 'call-heartbeat-v1';
 /** The native full-screen ring (CallStyle). Silent: the native Ringer plays the ringtone. */
 export const NATIVE_CALL_CHANNEL_ID = 'incoming-call-native-v1';

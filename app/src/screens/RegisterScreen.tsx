@@ -13,7 +13,7 @@ import { space } from '@/theme';
 const MIN_PASSWORD = 8;
 const MAX_USERNAME = 40;
 
-/** Make an account. A new account is a new profile: it goes on to the recovery code and the call setup, as a new profile always did. */
+/** Make an account, store its credential automatically, then set up the daily call. */
 export default function RegisterScreen() {
   const navigation = useNavigation();
   const { selectProfile } = useProfile();

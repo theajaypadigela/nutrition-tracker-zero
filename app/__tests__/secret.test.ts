@@ -2,11 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 import {
   clearProfileSecret,
-  groupSecret,
   loadProfileSecret,
-  normaliseSecret,
   saveProfileSecret,
-  SECRET_RE,
 } from '@/services/secret';
 
 const SECRET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ'; // 43 characters, as the Worker makes it
@@ -44,7 +41,7 @@ describe('the profile secret in secure storage (plan 8.3.2)', () => {
     for (const s of spies) expect(s).not.toHaveBeenCalled();
   });
 
-  it('reads a storage failure as "no secret", so the person can enter the recovery code', async () => {
+  it('reads a storage failure as "no secret", so the person can log in again', async () => {
     (Keychain.getGenericPassword as jest.Mock).mockRejectedValueOnce(new Error('keystore unavailable'));
     await expect(loadProfileSecret('user-1')).resolves.toBeNull();
   });
@@ -59,28 +56,5 @@ describe('the profile secret in secure storage (plan 8.3.2)', () => {
   it('clearing never throws, even with nothing to clear', async () => {
     (Keychain.resetGenericPassword as jest.Mock).mockRejectedValueOnce(new Error('nothing'));
     await expect(clearProfileSecret('user-1')).resolves.toBeUndefined();
-  });
-});
-
-describe('the recovery code', () => {
-  it('has the shape the Worker makes: 43 URL-safe characters', () => {
-    expect(SECRET_RE.test(SECRET)).toBe(true);
-    for (const bad of [
-      '',
-      'short',
-      `${SECRET}x`,
-      SECRET.slice(1),
-      `${SECRET.slice(0, 42)}!`,
-      `${SECRET.slice(0, 42)} `,
-    ])
-      expect(SECRET_RE.test(bad)).toBe(false);
-  });
-
-  it('is shown in blocks, and accepted back with spaces and line breaks', () => {
-    const shown = groupSecret(SECRET);
-    expect(shown.split(' ')).toHaveLength(8);
-    expect(shown.replace(/ /g, '')).toBe(SECRET);
-    expect(normaliseSecret(` ${shown.replace(/ /g, '\n')}  `)).toBe(SECRET);
-    expect(normaliseSecret(shown)).toBe(SECRET);
   });
 });

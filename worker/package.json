@@ -20,7 +20,8 @@
     "@vitest/snapshot": "^4.1.11",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.147.0",
+    "ws": "^8.22.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,

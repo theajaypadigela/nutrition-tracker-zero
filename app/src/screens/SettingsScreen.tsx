@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Platform, Share, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -17,6 +17,8 @@ import { useProfile } from '@/state/ProfileContext';
 import { clearProfileSecret } from '@/services/secret';
 import { space, useTheme, useThemePreference, type ThemePreference } from '@/theme';
 import { formatClock } from '@/utils/dates';
+import { voiceApi } from '@/services/voice/api';
+import type { VoiceConfiguration } from '../../../shared/voice';
 import { initialsOf } from '@/utils/format';
 
 const STATUS_TEXT: Record<CallInfo['status'], string> = {
@@ -48,13 +50,16 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [lastRing, setLastRing] = useState<LastRing | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [voice, setVoice] = useState<VoiceConfiguration | null>(null);
 
   const load = useCallback(async () => {
     try {
       const s = await api.getSettings();
       setSettings(s);
+      await applySchedule(s);
       setError(null);
       setLastRing(await loadLastRing());
+      Promise.resolve().then(() => voiceApi.configuration()).then(setVoice).catch(() => setVoice(null));
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -64,14 +69,13 @@ export default function SettingsScreen() {
       load();
     }, [load]),
   );
-  useEffect(() => {
-    if (settings) applySchedule(settings).catch(() => {});
-  }, [settings?.callTime, settings?.callEnabled, settings?.timezone]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const patch = async (label: string, body: Parameters<typeof api.updateSettings>[0]) => {
     setBusy(label);
     try {
-      setSettings(await api.updateSettings(body));
+      const next = await api.updateSettings(body);
+      setSettings(next);
+      // Finish native scheduling inside the save, before telling the person it succeeded.
+      await applySchedule(next);
       setError(null);
       return true;
     } catch (e) {
@@ -83,16 +87,24 @@ export default function SettingsScreen() {
   };
 
   const testCall = async () => {
-    if (!settings?.vapi.configured) {
-      Alert.alert('Add your Vapi key first', 'The test call uses your Vapi public key.');
-      return;
-    }
     setBusy('test');
     try {
+      const configuration = await voiceApi.configuration();
+      setVoice(configuration);
+      if (!configuration.configured) {
+        Alert.alert('Voice assistant needs setup', configuration.provider === 'vapi'
+          ? 'Add your Vapi public key below.' : 'Configure the active voice provider on the backend.');
+        return;
+      }
       await armTestCall();
-      Alert.alert('Test call armed', 'Your phone rings in about 5 seconds. Lock the screen to check the full-screen call.');
+      Alert.alert('Test call armed', Platform.OS === 'ios'
+        ? 'A sound reminder arrives in about 5 seconds, even if you close the app. Tap it to start the call.'
+        : 'Your phone rings in about 5 seconds. Close the app or lock the screen to check the call.');
     } catch (e) {
-      Alert.alert('Could not arm the test call', errorMessage(e));
+      Alert.alert('Could not arm the test call', errorMessage(e), [
+        { text: 'Reminder health', onPress: () => navigation.navigate('ReminderHealth') },
+        { text: 'Close', style: 'cancel' },
+      ]);
     } finally {
       setBusy(null);
     }
@@ -106,6 +118,7 @@ export default function SettingsScreen() {
   })();
 
   const h = strings.health.settings;
+  const personal = health.mode === 'personalised' ? health.profile : null;
 
   const setHidden = async (numbersHidden: boolean) => {
     setBusy('hide');
@@ -190,6 +203,31 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </View>
+
+      {personal ? (
+        <FormGroup title="Personal details" hint="Edit these answers to update your personal targets.">
+          <ListGroup>
+            {!health.numbersHidden ? (
+              <>
+                <ListRow title="Birth year" value={String(personal.birthYear ?? '')} />
+                <ListRow title="Height" value={personal.heightCm === undefined ? undefined : `${personal.heightCm} cm`} />
+                <ListRow title="Weight" value={personal.weightKg === undefined ? undefined : `${personal.weightKg} kg`} />
+              </>
+            ) : null}
+            {personal.sexForCalc ? <ListRow title={strings.health.about.sexTitle} value={strings.health.about[personal.sexForCalc]} /> : null}
+            {personal.activity ? <ListRow title="Activity" value={strings.health.activity[personal.activity].title} /> : null}
+            {personal.goal ? <ListRow title="Goal" value={strings.health.goal[personal.goal].title} /> : null}
+            {personal.pattern ? <ListRow title="Eating pattern" value={strings.health.pattern[personal.pattern]} /> : null}
+            <ListRow
+              testID="settings-edit-personal"
+              icon={UserRound}
+              title="Edit personal details"
+              subtitle="Birth year, height, weight, activity and goals"
+              onPress={() => navigation.navigate('HealthIntro')}
+            />
+          </ListGroup>
+        </FormGroup>
+      ) : null}
 
       <FormGroup title={strings.appearance.title} hint={strings.appearance.hint}>
         <Segmented<ThemePreference>
@@ -279,6 +317,15 @@ export default function SettingsScreen() {
 
           <FormGroup
             title="Voice assistant"
+            hint={voice ? `${voice.provider === 'deepgram' ? 'Deepgram' : voice.provider} is the active provider.` : 'Loading voice provider…'}
+          >
+            <Card>
+              <Text variant="body">{voice?.configured ? 'Ready for voice check-ins.' : 'The voice backend needs configuration.'}</Text>
+            </Card>
+          </FormGroup>
+
+          <FormGroup
+            title="Vapi alternative"
             hint={
               settings.vapi.configured
                 ? 'A key is saved. Paste a new one to replace it.'
@@ -341,10 +388,10 @@ export default function SettingsScreen() {
                 testID="settings-health"
                 icon={UserRound}
                 title={health.profile ? h.profileSet : h.profileNone}
-                onPress={() => navigation.navigate('HealthIntro')}
+                onPress={health.status === 'ready' || health.status === 'locked' || health.status === 'mismatch' ? () => navigation.navigate('HealthIntro') : undefined}
               />
               {health.status === 'locked' || health.status === 'mismatch' ? (
-                <ListRow icon={KeyRound} title={h.unlock} onPress={() => navigation.navigate('RecoveryEntry')} />
+                <ListRow icon={KeyRound} title={h.unlock} onPress={() => navigation.navigate('Reauthenticate')} />
               ) : null}
               <ListRow icon={Target} title={h.targets} subtitle={h.targetsHint} onPress={() => navigation.navigate('Targets')} />
               {health.profile ? (

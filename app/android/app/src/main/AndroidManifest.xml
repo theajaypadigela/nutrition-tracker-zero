@@ -11,8 +11,8 @@
     by the user and detectable at launch via notifee.getNotificationSettings().android.alarm.
     USE_EXACT_ALARM was REMOVED: it makes canScheduleExactAlarms() always true on Android 13+
     but is Play-policy-restricted to alarm/calendar apps and would be a launch blocker. The
-    scheduler falls back to inexact (SET_AND_ALLOW_WHILE_IDLE) triggers when exact is not
-    granted, and the reminder-health surface shows the "may be a few minutes late" state.
+    native scheduler falls back to inexact alarms when exact is not granted, and Reminder
+    health identifies that exact delivery is unavailable until the permission is allowed.
   -->
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
   <uses-permission android:name="android.permission.VIBRATE" />
@@ -40,8 +40,7 @@
   -->
   <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
   <!--
-    Declared explicitly so Notifee's boot receiver re-arms alarm triggers after reboot.
-    Previously this only existed via Notifee's manifest merge.
+    ScheduledCallReceiver restores the saved native daily alarm after reboot.
   -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -111,9 +110,27 @@
       android:exported="false"
       android:foregroundServiceType="microphone" />
 
+    <service
+      android:name="com.nutritiontrackerzero.voicepcm.VoicePcmService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
+
     <!-- Handles Decline / Snooze actions on the call & missed notifications (works from background). -->
     <receiver
       android:name=".incomingcall.CallActionReceiver"
       android:exported="false" />
+
+    <!-- Native scheduling survives process death and is restored without loading JavaScript. -->
+    <receiver
+      android:name=".incomingcall.ScheduledCallReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        <action android:name="android.intent.action.TIME_SET" />
+        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+        <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>
