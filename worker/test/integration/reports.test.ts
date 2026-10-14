@@ -417,7 +417,7 @@ describe('recorded intake over an inclusive date range', () => {
   it('includes every stored nutrient, scales units and quantities, and distinguishes missing values from zero', async () => {
     const p = await createProfileWithSecret();
     const { NUTRIENTS } = await import('../../src/domain/nutrients');
-    const nutrients = Object.fromEntries(NUTRIENTS.map((n, i) => [n.key, i === 0 ? 100 : i === 1 ? 0 : i]));
+    const nutrients = { ...Object.fromEntries(NUTRIENTS.map((n, i) => [n.key, i])), calories: 600, protein: 0, carbs: 30, fat: 20, saturatedFat: 2, sugar: 4, addedSugar: 1, fiber: 5 } as Record<string, number>;
     const food = (await api('POST', '/foods', { body: { displayName: unique('all nutrients'), baseUnit: '100 g', nutrients } })).body.food;
     await logDay(p.userId, DATES[0]!, [], [{ name: food.displayName, quantity: 150, unit: 'g' }]);
     await logDay(p.userId, DATES[2]!, [], [{ name: food.displayName, quantity: 50, unit: 'g' }, { name: unique('unknown food') }]);
@@ -444,7 +444,7 @@ describe('recorded intake over an inclusive date range', () => {
     expect(n(res, 'calories').total).toBe(100);
     expect(n(res, 'vitaminD').total).toBe(0);
     expect(n(res, 'vitaminC')).toMatchObject({ total: null, missingItems: 1 });
-    const updated = await api('PATCH', `/foods/${food.id}`, { body: { nutrients: { calories: 120, vitaminC: 2 } } });
+    const updated = await api('PUT', `/foods/${food.id}`, { body: { nutrients: { calories: 120, vitaminC: 2 } } });
     expect(updated.status).toBe(200);
     expect(n(await getRange(p, DATES[0]!, DATES[1]!), 'calories').total).toBe(120);
     await logDay(p.userId, TODAY, [food.displayName]);
