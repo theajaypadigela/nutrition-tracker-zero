@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { api, errorMessage } from '@/api/client';
+import { getProfileZone } from '@/api/zone';
 import type { CallKind } from '@/api/types';
+import { deviceTimeZone } from '@/components/TimezoneField';
+import { CALLBACK_TOOL, scheduleCallback } from '@/services/calls/callback';
 import { cancelAutoRetry, consumePendingHangup, dismissIncomingCall, subscribeToNativeCallEvents } from '@/services/calls/native';
 import type { AudioRoute, CallAudioState } from '@/services/calls/audioRoute';
 import { reminderLog } from '@/services/calls/logger';
@@ -19,6 +22,8 @@ export function useVoiceCall() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audio, setAudio] = useState<CallAudioState | null>(null);
   const [session, setSession] = useState<{ callId: number; localDate: string; providerCallId: string | null; provider: string } | null>(null);
+  /** The call back the person asked for during this call, once it is set: the call screen says when it will ring. */
+  const [callback, setCallback] = useState<{ fireAt: number; minutes: number } | null>(null);
   const current = useRef<VoiceSession | null>(null);
   const generation = useRef(0);
   const statusRef = useRef<VoiceStatus>('idle');
@@ -42,7 +47,9 @@ export function useVoiceCall() {
     const run = ++generation.current;
     current.current?.dispose();
     current.current = null;
-    setError(null); setTranscript([]); setSession(null); setAudio(null); setIsSpeaking(false);
+    setError(null); setTranscript([]); setSession(null); setAudio(null); setIsSpeaking(false); setCallback(null);
+    // A model can repeat a tool call: asking twice for the same call back sets one reminder, not two.
+    const callbackAnswers = new Map<string, Promise<Record<string, unknown>>>();
     let callId: number | null = null;
     let connected = false;
     let reported = false;
@@ -94,7 +101,23 @@ export function useVoiceCall() {
         onSpeaking(value) { if (valid()) setIsSpeaking(value); },
         onAudio(value) { if (valid()) setAudio(value); },
         onFunction(call) {
-          const functionResult = queue.then(() => voiceApi.tool(started.callId, call));
+          // The phone rings itself: "call me again in 20 minutes" is answered here, after any save before it, and never leaves the phone.
+          const run = call.name === CALLBACK_TOOL
+            ? () => {
+                const known = callbackAnswers.get(call.id);
+                if (known) return known;
+                const zone = getProfileZone();
+                const answer = scheduleCallback(call.arguments, { timeZone: zone?.zone ?? deviceTimeZone(), profileId: zone?.userId })
+                  .then((outcome): Record<string, unknown> => {
+                    if (!outcome.ok) return { error: outcome.error };
+                    if (valid()) setCallback({ fireAt: outcome.fireAt, minutes: outcome.minutes });
+                    return { result: outcome.reply };
+                  });
+                callbackAnswers.set(call.id, answer);
+                return answer;
+              }
+            : () => voiceApi.tool(started.callId, call);
+          const functionResult = queue.then(run);
           queue = functionResult.then(() => undefined, () => undefined);
           return functionResult;
         },
@@ -121,5 +144,5 @@ export function useVoiceCall() {
       subscription.remove(); unsubscribe(); current.current?.dispose(); current.current = null; dismissIncomingCall();
     };
   }, [stop]);
-  return { status, error, transcript, isSpeaking, session, audio, setAudioRoute, setMuted, start, stop };
+  return { status, error, transcript, isSpeaking, session, audio, callback, setAudioRoute, setMuted, start, stop };
 }

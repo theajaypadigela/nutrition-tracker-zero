@@ -8,6 +8,8 @@ import { cancelNativeScheduledCall, scheduleNativeCall } from './native';
 
 export const DAILY_TRIGGER_ID = 'call-daily';
 export const TEST_TRIGGER_ID = 'call-test';
+/** The one call the person asked for during a call ("call me again in 20 minutes"): a one-shot the OS keeps, replaced by the next ask. */
+export const CALLBACK_TRIGGER_ID = 'call-later';
 
 export function isAppOwnedTriggerId(id: string): boolean {
   return id.startsWith('call-');
@@ -21,17 +23,20 @@ export async function armRing(opts: {
   exact: boolean;
   callTime?: string;
   timezone?: string;
+  reason?: 'callback';
+  notification?: { title: string; body: string };
 }): Promise<number> {
   // Remove the old heartbeat so upgrading cannot ring twice. Do not cancel the native
   // alarm before replacing it: an unsuccessful save should leave tomorrow's ring armed.
   await notifee.cancelTriggerNotification(opts.id);
   const armedAt = await scheduleNativeCall({
     id: opts.id,
-    payload: { callKind: opts.callKind, notificationId: opts.id, intendedFireAt: opts.fireAt },
+    payload: { callKind: opts.callKind, notificationId: opts.id, intendedFireAt: opts.fireAt, ...(opts.reason ? { reason: opts.reason } : {}) },
     fireAt: opts.fireAt,
     repeatDaily: opts.repeatDaily,
     callTime: opts.callTime,
     timezone: opts.timezone,
+    notification: opts.notification,
   });
   reminderLog.info('schedule.armed', `Armed ${opts.id}`, { fireAt: armedAt, exact: opts.exact });
   return armedAt;

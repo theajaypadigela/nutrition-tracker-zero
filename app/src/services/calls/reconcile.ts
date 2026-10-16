@@ -7,6 +7,7 @@
  */
 import notifee from '@notifee/react-native';
 import { Platform } from 'react-native';
+import { syncCallback } from './callback';
 import { canScheduleExact, readPermissionSnapshot } from './permissions';
 import { ensureChannels } from './channels';
 import { reminderLog } from './logger';
@@ -19,6 +20,8 @@ export interface ReconcileReport {
   armedAt: number | null;
   pruned: string[];
   exact: boolean;
+  /** When the call back the person asked for during a call is due, or null when there is none. */
+  callbackAt: number | null;
 }
 
 /** Desired fire time for the daily ring, or null when calls are off / no time set. */
@@ -31,7 +34,7 @@ export function desiredDailyFire(schedule: CallSchedule | null, now: number): nu
 let chain: Promise<unknown> = Promise.resolve();
 
 /** Serialized: passes never overlap, and none are dropped. */
-export function reconcile(reason: string, opts: { signedIn: boolean; now?: number } = { signedIn: true }) {
+export function reconcile(reason: string, opts: { signedIn: boolean; profileId?: string; now?: number } = { signedIn: true }) {
   const next = chain.then(
     () => doReconcile(reason, opts),
     () => doReconcile(reason, opts),
@@ -40,7 +43,7 @@ export function reconcile(reason: string, opts: { signedIn: boolean; now?: numbe
   return next;
 }
 
-async function doReconcile(reason: string, opts: { signedIn: boolean; now?: number }): Promise<ReconcileReport> {
+async function doReconcile(reason: string, opts: { signedIn: boolean; profileId?: string; now?: number }): Promise<ReconcileReport> {
   const now = opts.now ?? Date.now();
   await ensureChannels();
 
@@ -61,6 +64,13 @@ async function doReconcile(reason: string, opts: { signedIn: boolean; now?: numb
     await cancelRing(DAILY_TRIGGER_ID);
   }
   if (!opts.signedIn) await cancelRing(TEST_TRIGGER_ID);
+  // The call the person asked for during a call: put back if the OS lost it, forgotten once over, dropped for another account or sign-out.
+  // It is not tied to the daily switch: asking for it was the person's own, later word, so turning daily calls off does not take it back
+  // (turning them off is what drops it: schedule.ts).
+  const callback = await syncCallback({ signedIn: opts.signedIn, profileId: opts.profileId, now }).catch((e) => {
+    reminderLog.warn('reconcile.callback_failed', String(e));
+    return null;
+  });
   const pruned: string[] = [];
   for (const id of pending) {
     // Remove all legacy JS-dependent triggers; current rings belong to native scheduling.
@@ -69,8 +79,8 @@ async function doReconcile(reason: string, opts: { signedIn: boolean; now?: numb
       pruned.push(id);
     }
   }
-  reminderLog.info('reconcile.done', `Reconciliation (${reason})`, { armedAt: fireAt, pruned: pruned.length, exact });
-  return { armedAt: fireAt, pruned, exact };
+  reminderLog.info('reconcile.done', `Reconciliation (${reason})`, { armedAt: fireAt, pruned: pruned.length, exact, callbackAt: callback?.fireAt ?? null });
+  return { armedAt: fireAt, pruned, exact, callbackAt: callback?.fireAt ?? null };
 }
 
 /** Rings the phone through the real alarm → native ring → answer path in ~5 seconds. */

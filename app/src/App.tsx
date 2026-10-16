@@ -20,7 +20,7 @@ import { AppStatusBar, ThemeProvider, useTheme } from '@/theme';
 function Shell() {
   const { ready, profile } = useProfile();
   const { colors, isDark } = useTheme();
-  useCallRouting(ready ? !!profile : null);
+  useCallRouting(ready ? !!profile : null, profile?.id);
 
   // Keep the local ring schedule in step with the server (e.g. after picking an existing profile).
   useEffect(() => {

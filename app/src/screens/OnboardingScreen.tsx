@@ -49,7 +49,7 @@ export default function OnboardingScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notificationsAsked, setNotificationsAsked] = useState(false);
+  const [notificationState, setNotificationState] = useState<'enabled' | 'denied' | 'error' | null>(null);
 
   const [h, m] = callTime.split(':').map(Number);
   const pickerValue = new Date();
@@ -61,7 +61,7 @@ export default function OnboardingScreen() {
     try {
       const settings = await api.updateSettings({ callTime, timezone, callEnabled: true });
       await applySchedule(settings);
-      finishOnboarding();
+      await finishOnboarding();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -83,7 +83,9 @@ export default function OnboardingScreen() {
           <View style={{ gap: space.sm }}>
             <Text variant="title1">When should we call you?</Text>
             <Text variant="body" tone="secondary">
-              Each day at this time your phone rings like a normal call. Tell the assistant what you ate and it logs it for you.
+              {Platform.OS === 'ios'
+                ? 'Each day at this time a sound reminder arrives. Tap it, tell the assistant what you ate, and it logs it for you.'
+                : 'Each day at this time your phone rings like a normal call. Tell the assistant what you ate and it logs it for you.'}
             </Text>
           </View>
         </View>
@@ -156,10 +158,14 @@ export default function OnboardingScreen() {
             <ListRow
               icon={Bell}
               title="Allow notifications"
-              right={notificationsAsked ? <Badge label="Done" tone="success" icon={Check} /> : undefined}
+              right={notificationState === 'enabled' ? <Badge label="Done" tone="success" icon={Check} /> : notificationState === 'denied' ? <Badge label="Off" tone="warning" /> : undefined}
               onPress={async () => {
-                await requestCorePermissions().catch(() => {});
-                setNotificationsAsked(true);
+                try {
+                  const permissions = await requestCorePermissions();
+                  setNotificationState(permissions.notificationsAuthorized ? 'enabled' : 'denied');
+                } catch {
+                  setNotificationState('error');
+                }
               }}
             />
             {Platform.OS === 'android' ? (
@@ -169,6 +175,8 @@ export default function OnboardingScreen() {
               <ListRow icon={Maximize2} title="Allow full-screen calls" onPress={() => openFullScreenIntentSettings()} />
             ) : null}
           </ListGroup>
+          {notificationState === 'denied' ? <Notice tone="warning">Notifications are off. After setup, open Settings → Reminder health to enable them.</Notice> : null}
+          {notificationState === 'error' ? <Notice tone="warning">Could not check notification permission. Try again.</Notice> : null}
         </FormGroup>
 
         <View style={styles.note}>

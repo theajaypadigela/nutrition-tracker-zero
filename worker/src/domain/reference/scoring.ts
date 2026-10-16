@@ -42,6 +42,11 @@ export interface ReportConfig {
    * and what is missing come first, and the score is added once the foods people eat have their values (plan 5.5).
    */
   score: boolean;
+  /**
+   * Whether the "looks incomplete. Is that everything you ate?" insight is offered. On in the engine, so its rule stays tested; the Worker
+   * turns it off while a person cannot mark a day complete, because the question would have no answer (features.ts, `dayCompletion`).
+   */
+  dayCompletionPrompts: boolean;
   // --- insights (5.6) [A]
   weekendMinWeekendDays: number;
   weekendMinWeekdayDays: number;
@@ -76,6 +81,7 @@ export const REPORT_CONFIG: ReportConfig = {
   moderationComponents: false,
   calibration: false,
   score: true,
+  dayCompletionPrompts: true,
   weekendMinWeekendDays: 2,
   weekendMinWeekdayDays: 3,
   weekendDifference: 0.15,

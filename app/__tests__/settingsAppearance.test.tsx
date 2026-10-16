@@ -21,6 +21,7 @@ jest.mock('@/services/calls/scheduleStore', () => ({ loadLastRing: jest.fn(async
 jest.mock('@/services/secret', () => ({ clearProfileSecret: jest.fn() }));
 jest.mock('@/api/client', () => ({
   api: {
+    updateSettings: jest.fn(async (patch) => ({ id: 'u1', timezone: 'Asia/Kolkata', callTime: '20:00', callEnabled: true, vapi: { configured: true }, ...patch })),
     getSettings: jest.fn(async () => ({ id: 'u1', name: 'Asha Rao', timezone: 'Asia/Kolkata', callTime: '20:00', callEnabled: true, vapi: { configured: true }, lastCall: null })),
   },
   errorMessage: (e: unknown) => String(e),
@@ -150,4 +151,23 @@ describe('Personal details, in Profile', () => {
     await act(async () => { edit.props.onPress(); });
     expect(jest.requireMock('@react-navigation/native').__nav.navigate).toHaveBeenCalledWith('HealthIntro');
   });
+});
+
+
+it('keeps iOS time changes as a draft, then saves once and closes the picker', async () => {
+  jest.replaceProperty(RN.Platform, 'OS', 'ios');
+  (api.updateSettings as jest.Mock).mockClear();
+  const open = tree.root.findAll(n => n.props.title === 'Call time' && typeof n.props.onPress === 'function')[0]!;
+  await act(async () => open.props.onPress());
+  const picker = tree.root.findByType('DateTimePicker' as React.ElementType);
+  const time = new Date(); time.setHours(21, 15, 0, 0);
+  await act(async () => picker.props.onChange({ type: 'set' }, time));
+  time.setMinutes(30);
+  await act(async () => tree.root.findByType('DateTimePicker' as React.ElementType).props.onChange({ type: 'set' }, time));
+  expect(api.updateSettings).not.toHaveBeenCalled();
+  const save = tree.root.findAll(n => n.props.testID === 'save-call-time' && typeof n.props.onPress === 'function')[0]!;
+  await act(async () => save.props.onPress());
+  expect(api.updateSettings).toHaveBeenCalledTimes(1);
+  expect(api.updateSettings).toHaveBeenCalledWith({ callTime: '21:30' });
+  expect(tree.root.findAllByType('DateTimePicker' as React.ElementType)).toHaveLength(0);
 });

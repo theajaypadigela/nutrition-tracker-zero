@@ -59,3 +59,13 @@ describe('a unit conversion', () => {
     expect(all(tree)).toContain('1 katori = 150 g');
   });
 });
+
+it('accepts a decimal comma and sends the converted number', async () => {
+  const tree = await render('katori', 'as_eaten');
+  const input = tree.root.findAll(n => typeof n.props.onChangeText === 'function')[0]!;
+  await act(async () => input.props.onChangeText('150,5'));
+  expect(all(tree)).toContain('1 katori = 151 g');
+  const save = tree.root.findAll(n => n.props.accessibilityLabel === 'Save conversion' && typeof n.props.onPress === 'function')[0]!;
+  await act(async () => save.props.onPress());
+  expect(api_.setUnit).toHaveBeenCalledWith('rice', 'katori', 1.505);
+});

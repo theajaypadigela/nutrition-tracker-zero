@@ -87,10 +87,12 @@ export function HealthProvider({ children }: { children: React.ReactNode }) {
         // The secret on this phone is not this profile's (a stale Keychain entry after a reinstall, say).
         setState(s => ({ accountKey, revision: s.revision + 1, status: 'mismatch', ...GENERIC, error: null }));
       } else {
+        // Capture the message before React runs the updater; Hermes may release the catch binding first.
+        const message = e instanceof Error ? e.message : String(e);
         setState(s => ({
           ...s,
           status: 'error',
-          error: e instanceof Error ? e.message : String(e),
+          error: message,
         }));
       }
     }

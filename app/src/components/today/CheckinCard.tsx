@@ -232,7 +232,9 @@ export function CheckinCard({ callTime, callEnabled, timezone, onSave }: Checkin
           </>
         )}
         <Text variant="caption" tone="muted">
-          Rings in your profile's time zone ({timezone}). If you miss it, it rings once more an hour later.
+          {Platform.OS === 'ios'
+            ? `A sound reminder arrives in your profile's time zone (${timezone}). Tap it to start the call.`
+            : `Rings in your profile's time zone (${timezone}). If you miss it, it rings once more an hour later.`}
         </Text>
       </Sheet>
     </>

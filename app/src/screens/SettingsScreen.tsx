@@ -50,6 +50,7 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [lastRing, setLastRing] = useState<LastRing | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [draftTime, setDraftTime] = useState('20:00');
   const [voice, setVoice] = useState<VoiceConfiguration | null>(null);
 
   const load = useCallback(async () => {
@@ -111,7 +112,7 @@ export default function SettingsScreen() {
   };
 
   const pickerDate = (() => {
-    const [h, m] = (settings?.callTime ?? '20:00').split(':').map(Number);
+    const [h, m] = (showPicker && Platform.OS === 'ios' ? draftTime : settings?.callTime ?? '20:00').split(':').map(Number);
     const d = new Date();
     d.setHours(h ?? 20, m ?? 0, 0, 0);
     return d;
@@ -256,7 +257,9 @@ export default function SettingsScreen() {
 
           <FormGroup
             title="Daily call"
-            hint={'If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10 minutes.'}
+            hint={Platform.OS === 'ios'
+              ? 'A sound reminder arrives each day. Tap it to start your voice check-in. Focus and silent mode can silence it.'
+              : 'If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10 minutes.'}
           >
             <ListGroup>
               <ListRow
@@ -279,7 +282,10 @@ export default function SettingsScreen() {
               <ListRow
                 title="Call time"
                 value={formatClock(settings.callTime)}
-                onPress={settings.callEnabled ? () => setShowPicker(true) : undefined}
+                onPress={settings.callEnabled ? () => {
+                  setDraftTime(settings.callTime ?? '20:00');
+                  setShowPicker(true);
+                } : undefined}
                 chevron={settings.callEnabled}
               />
               <View style={{ padding: space.lg, gap: space.md }}>
@@ -288,21 +294,31 @@ export default function SettingsScreen() {
               </View>
             </ListGroup>
             {showPicker ? (
-              <DateTimePicker
-                value={pickerDate}
-                mode="time"
-                is24Hour={false}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                themeVariant={isDark ? 'dark' : 'light'}
-                onChange={(event, picked) => {
-                  setShowPicker(Platform.OS === 'ios');
-                  if (event.type === 'set' && picked) {
-                    patch('time', {
-                      callTime: `${String(picked.getHours()).padStart(2, '0')}:${String(picked.getMinutes()).padStart(2, '0')}`,
-                    });
-                  }
-                }}
-              />
+              <View style={{ gap: space.sm }}>
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  themeVariant={isDark ? 'dark' : 'light'}
+                  onChange={(event, picked) => {
+                    setShowPicker(Platform.OS === 'ios');
+                    if (event.type === 'set' && picked) {
+                      const callTime = `${String(picked.getHours()).padStart(2, '0')}:${String(picked.getMinutes()).padStart(2, '0')}`;
+                      if (Platform.OS === 'ios') setDraftTime(callTime);
+                      else patch('time', { callTime });
+                    }
+                  }}
+                />
+                {Platform.OS === 'ios' ? (
+                  <View style={{ flexDirection: 'row', gap: space.sm }}>
+                    <Button label="Cancel" variant="ghost" disabled={busy === 'time'} onPress={() => setShowPicker(false)} />
+                    <Button label="Save call time" testID="save-call-time" loading={busy === 'time'} onPress={async () => {
+                      if (await patch('time', { callTime: draftTime })) setShowPicker(false);
+                    }} />
+                  </View>
+                ) : null}
+              </View>
             ) : null}
           </FormGroup>
           <Button

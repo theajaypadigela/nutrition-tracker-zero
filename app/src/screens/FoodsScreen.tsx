@@ -10,6 +10,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { createStyles, space, useTheme } from '@/theme';
 import { formatNumber } from '@/utils/format';
 import { where } from '@/i18n/strings';
+import { useHealth } from '@/state/HealthContext';
 
 export function matchesFood(f: Food, query: string): boolean {
   return !query || f.displayName.toLowerCase().includes(query) || f.aliases.some(a => a.includes(query));
@@ -23,7 +24,7 @@ const useRowStyles = createStyles(() => ({
 }));
 
 /** One shared food as a row of a ListGroup: name, what its values are per, and its other names. */
-export function FoodRow({ food, onPress, subtitle }: { food: Food; onPress: () => void; subtitle?: string }) {
+export function FoodRow({ food, onPress, subtitle, numbersHidden = false }: { food: Food; onPress: () => void; subtitle?: string; numbersHidden?: boolean }) {
   const { colors } = useTheme();
   const styles = useRowStyles();
   return (
@@ -39,7 +40,11 @@ export function FoodRow({ food, onPress, subtitle }: { food: Food; onPress: () =
           {food.displayName}
         </Text>
         <Text variant="small" tone="secondary" numberOfLines={1}>
-          {subtitle ?? `${formatNumber(food.nutrients.calories ?? 0)} kcal per ${perBase(food.baseUnit)}`}
+          {subtitle ?? (numbersHidden
+            ? `per ${perBase(food.baseUnit)}`
+            : food.nutrients.calories == null
+              ? `Calories unknown · per ${perBase(food.baseUnit)}`
+              : `${formatNumber(food.nutrients.calories)} kcal per ${perBase(food.baseUnit)}`)}
         </Text>
         {food.aliases.length ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>
@@ -55,6 +60,7 @@ export function FoodRow({ food, onPress, subtitle }: { food: Food; onPress: () =
 /** The shared foods table everyone's logs are counted from. */
 export default function FoodsScreen() {
   const navigation = useNavigation();
+  const { numbersHidden } = useHealth();
   const [q, setQ] = useState('');
   const foods = useAsync(() => api.listFoods(), []);
   useFocusEffect(
@@ -87,7 +93,7 @@ export default function FoodsScreen() {
       {list.length > 0 ? (
         <ListGroup>
           {list.map(f => (
-            <FoodRow key={f.id} food={f} onPress={() => navigation.navigate('FoodEditor', { foodId: f.id })} />
+            <FoodRow key={f.id} food={f} numbersHidden={numbersHidden} onPress={() => navigation.navigate('FoodEditor', { foodId: f.id })} />
           ))}
         </ListGroup>
       ) : null}

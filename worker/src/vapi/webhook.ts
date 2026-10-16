@@ -1,11 +1,13 @@
 import { WEBHOOK_TOKEN_RE } from '../auth';
 import { HttpError, json, nowIso, readJson } from '../http';
 import { insertItemsStatement, loadIndex, type CallRow, type UserRow } from '../db/queries';
+import { callbackReply, parseCallbackMinutes } from '../domain/callback';
+import { FEATURES } from '../domain/features';
 import { parseItemList, prepareItems } from '../domain/items';
 import type { FoodIndex } from '../domain/match';
 import { isValidDate, localDateIn } from '../domain/time';
 import { markConfirmedDay } from '../voice/save';
-import { MARK_DAY_COMPLETE, SAVE_FOODS } from './assistant';
+import { MARK_DAY_COMPLETE, SAVE_FOODS, SCHEDULE_CALLBACK } from './assistant';
 import {
   callIdOf,
   endOfCallReportOf,
@@ -75,6 +77,21 @@ async function handleToolCalls(db: D1Database, user: UserRow, call: CallRow | nu
   let index: FoodIndex | null = null;
 
   for (const tc of toolCallsOf(msg)) {
+    if (tc.name === SCHEDULE_CALLBACK) {
+      // Only the phone can ring itself: the app arms the reminder from the same message. The server's part is to check the minutes and
+      // say what the person should hear, the way it answers the other tools. Nothing is stored.
+      const asked = parseCallbackMinutes(tc.arguments);
+      results.push(
+        'error' in asked
+          ? { name: tc.name, toolCallId: tc.id, error: asked.error }
+          : { name: tc.name, toolCallId: tc.id, result: callbackReply(asked.minutes, Date.now() + asked.minutes * 60_000, user.timezone) },
+      );
+      continue;
+    }
+    if (tc.name === MARK_DAY_COMPLETE && !FEATURES.dayCompletion) {
+      results.push({ name: tc.name, toolCallId: tc.id, error: 'Marking a day complete is not available. Say a short goodbye and end the call.' });
+      continue;
+    }
     if (tc.name !== SAVE_FOODS && tc.name !== MARK_DAY_COMPLETE) {
       results.push({ name: tc.name, toolCallId: tc.id, error: `Unknown tool ${tc.name}.` });
       continue;

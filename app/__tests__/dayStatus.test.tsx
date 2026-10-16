@@ -20,14 +20,16 @@ jest.mock('@/api/client', () => {
   const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
   return {
     errorMessage,
-    api: { getSettings: jest.fn(), getDay: jest.fn(), setDayStatus: jest.fn(), clearDayStatus: jest.fn(), updateSettings: jest.fn(), deleteItem: jest.fn() },
+    api: { getSettings: jest.fn(), getDay: jest.fn(), setDayStatus: jest.fn(), clearDayStatus: jest.fn(), updateSettings: jest.fn(), deleteItem: jest.fn(), updateItem: jest.fn() },
   };
 });
 
 import { api } from '@/api/client';
 import type { Day, DayMark, Insight, Item, Meta } from '@/api/types';
+import { EditItemSheet } from '@/components/today/EditItemSheet';
 import { DayStatusSheet } from '@/components/today/DayStatusSheet';
 import { weightText } from '@/components/today/MealSection';
+import { FEATURES } from '@/config/features';
 import { strings } from '@/i18n/strings';
 import TodayScreen from '@/screens/TodayScreen';
 import { useHealth } from '@/state/HealthContext';
@@ -35,6 +37,17 @@ import { useMeta } from '@/state/MetaContext';
 import { ThemeProvider } from '@/theme';
 import { insightAction } from '@/utils/insights';
 import metaJson from './fixtures/meta.json';
+
+// Day marking is off in the product for now (src/config/features.ts). This file keeps the way back working: it runs with the switch on, and
+// dayCompletionOff.test.tsx holds what the screen does while it is off.
+let dayCompletionWas = false;
+beforeAll(() => {
+  dayCompletionWas = FEATURES.dayCompletion;
+  FEATURES.dayCompletion = true;
+});
+afterAll(() => {
+  FEATURES.dayCompletion = dayCompletionWas;
+});
 
 const META = { units: [], meals: ['breakfast', 'lunch', 'snack', 'dinner'], baseUnits: [], ...(metaJson as object) } as unknown as Meta;
 const rn = jest.requireMock('@react-navigation/native') as { __nav: Record<string, jest.Mock>; useRoute: jest.Mock };
@@ -132,6 +145,15 @@ describe('the Today screen', () => {
     api_.setDayStatus.mockResolvedValue({});
     api_.clearDayStatus.mockResolvedValue(undefined);
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+
+  it('reloads the reminder settings when returning from Settings', async () => {
+    (useHealth as jest.Mock).mockReturnValue({ mode: 'personalised', numbersHidden: false, status: 'ready', refresh: jest.fn() });
+    await render(<TodayScreen />);
+    api_.getSettings.mockClear();
+    const effect = jest.requireMock('@react-navigation/native').useFocusEffect.mock.calls.at(-1)[0];
+    await act(async () => { effect(); });
+    expect(api_.getSettings).toHaveBeenCalledTimes(1);
   });
 
   it('replaces the generic protein target with the saved personal target when health settings change', async () => {
@@ -324,4 +346,18 @@ describe('the insight that opens a day', () => {
     nav.navigate('Main', { screen: 'Today', params: { date: (action as { date: string }).date } });
     expect(nav.navigate).toHaveBeenCalledWith('Main', { screen: 'Today', params: { date: '2026-10-08' } });
   });
+});
+
+
+it.each([['1,5', 1.5], ['1,200', null]])('validates edited quantities consistently with adding food: %s', async (typed, expected) => {
+  (useMeta as jest.Mock).mockReturnValue(META);
+  api_.updateItem.mockClear().mockResolvedValue({});
+  const editedItem = { id: 'rice', rawName: 'Rice', quantity: 1, unit: 'katori', meal: 'lunch', status: 'pending_food', normalizedName: 'rice', nutrients: {} } as unknown as Item;
+  const tree = await render(<EditItemSheet item={editedItem} isOpen onClose={() => {}} onSaved={() => {}} />);
+  const input = tree.root.findAll(n => n.props.label === 'Quantity' && typeof n.props.onChangeText === 'function')[0]!;
+  await act(async () => input.props.onChangeText(typed));
+  const save = tree.root.findAll(n => n.props.label === 'Save changes' && typeof n.props.onPress === 'function')[0]!;
+  await act(async () => save.props.onPress());
+  if (expected === null) expect(api_.updateItem).not.toHaveBeenCalled();
+  else expect(api_.updateItem).toHaveBeenCalledWith('rice', expect.objectContaining({ quantity: expected }));
 });

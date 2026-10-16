@@ -51,6 +51,7 @@ it('persists the saved profile and 89g protein target through restart and passwo
   await mount();
   const account = await api.register('Personal targets account', 'a long password');
   await act(async () => { await profile.selectProfile(account.profile, { secret: account.secret, isNew: true }); });
+  await act(async () => { await profile.finishOnboarding(); });
   await settle();
   expect(health.status).toBe('ready');
   expect((await api.getGoals()).goals.find(g => g.key === 'protein')?.target).toBe(50);

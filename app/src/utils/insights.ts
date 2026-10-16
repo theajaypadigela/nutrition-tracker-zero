@@ -5,6 +5,7 @@
  * the sentence comes from the numberless table.
  */
 import type { Insight, NutrientInfo } from '@/api/types';
+import { FEATURES } from '@/config/features';
 import { fill, signedNumber } from '@/i18n/fill';
 import { strings } from '@/i18n/strings';
 import { MIN_DAYS_FOR_SUMMARY, nutrientInfo } from './report';
@@ -81,6 +82,14 @@ export function insightText(insight: Insight, env: InsightEnv): string | null {
       return template ? fill(template, base) : null;
     }
   }
+}
+
+/**
+ * The insights worth drawing. "Thursday looks incomplete. Is that everything you ate?" asks the person to say whether a day is complete,
+ * and nothing can answer it while day marking is off (config/features.ts). The Worker no longer sends it then; an older one still does.
+ */
+export function visibleInsights(insights: readonly Insight[]): Insight[] {
+  return FEATURES.dayCompletion ? [...insights] : insights.filter(i => i.id !== 'incomplete_days');
 }
 
 export type InsightAction =

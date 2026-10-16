@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, localDateIn, weekStartOf } from '../../src/domain/time';
 import { weeklyReportResponse } from '../../src/routes/reports';
 import { api, createProfileWithSecret, unique } from '../helpers';
+import { withDayCompletion } from '../features';
 
 const SAFE = { pregnantOrBreastfeeding: false, eatingDisorder: false, clinicianDiet: false, dietInteractingMedicine: false };
 const ASHA = { birthYear: 1996, birthMonth: 3, sexForCalc: 'female', heightCm: 160, weightKg: 60, activity: 'low_active', goal: 'general_health', pace: 'standard', pattern: 'omnivore', referenceSet: 'nasem' };
@@ -115,7 +116,7 @@ describe('a profile with no health profile: the general reference', () => {
     expect(n(res, 'protein').meanPerAssessedDay).toBe(59);
   });
 
-  it('honours a day marked "leave out" and a day marked complete', async () => {
+  it('honours a day marked "leave out" and a day marked complete', withDayCompletion(async () => {
     const foods = await seedFoods();
     const { userId, secret } = await createProfileWithSecret();
     for (const d of DATES) await logDay(userId, d, foods.map((f) => f.name));
@@ -123,7 +124,7 @@ describe('a profile with no health profile: the general reference', () => {
     const res = await report(userId, secret);
     expect(res.body.coverage.days[3].state).toBe('skipped');
     expect(res.body.coverage.assessedDays).toBe(6);
-  });
+  }));
 
   it('names the foods that supply the most of a nutrient', async () => {
     const foods = await seedFoods();
@@ -257,7 +258,7 @@ describe('a personalised profile: the engine\'s targets, the score, the history'
     expect((await report(userId, secret, `start=${WEEK}&weeks=3`)).body.history).toHaveLength(3);
   });
 
-  it('withholds the score and leads with a notice when a week is very low', async () => {
+  it('withholds the score and leads with a notice when a week is very low', withDayCompletion(async () => {
     const foods = await seedFoods();
     const { userId, secret } = await onboard();
     const small = (await api('POST', '/foods', { body: { displayName: unique('crumbs'), baseUnit: 'serving', nutrients: { calories: 350, protein: 8 } } })).body.food;
@@ -267,6 +268,19 @@ describe('a personalised profile: the engine\'s targets, the score, the history'
     expect(res.body.score).toMatchObject({ value: null, withheld: 'low_intake' });
     expect(res.body.insights[0].id).toBe('low_intake');
     void foods;
+  }));
+
+  it('still leads with the low-intake notice when a very light week is not marked at all (day marking is off)', async () => {
+    const { userId, secret } = await onboard();
+    const small = (await api('POST', '/foods', { body: { displayName: unique('crumbs'), baseUnit: 'serving', nutrients: { calories: 350, protein: 8 } } })).body.food;
+    for (const d of DATES) await logDay(userId, d, [small.displayName]);
+    // A mark stored while the feature was on is kept but not read: the week reads by its data alone.
+    await env.DB.prepare(`INSERT INTO day_status (user_id, local_date, status, updated_at) SELECT ?, value, 'skip', 't' FROM json_each(?)`).bind(userId, JSON.stringify(DATES)).run();
+    const res = await report(userId, secret);
+    expect(res.body.coverage.days.every((d: any) => d.state !== 'skipped' && d.state !== 'confirmed')).toBe(true);
+    expect(res.body.insights.map((i: any) => i.id)).toContain('low_intake');
+    // "Thursday looks incomplete. Is that everything you ate?" asks for an answer nobody can give now, so it is not offered.
+    expect(res.body.insights.map((i: any) => i.id)).not.toContain('incomplete_days');
   });
 });
 
@@ -427,13 +441,13 @@ describe('recorded intake over an inclusive date range', () => {
     expect(res.body.coverage).toMatchObject({ calendarDays: 3, loggedDays: 2, itemCount: 3, pendingItems: 1 });
     expect(res.body.nutrients.map((n: any) => n.nutrient)).toEqual(NUTRIENTS.map(n => n.key));
     for (const n of res.body.nutrients) {
-      expect(n).toMatchObject({ total: nutrients[n.nutrient] * 2, meanPerLoggedDay: nutrients[n.nutrient], knownItems: 2, missingItems: 1, isLowerBound: true });
+      expect(n).toMatchObject({ total: nutrients[n.nutrient]! * 2, meanPerLoggedDay: nutrients[n.nutrient], knownItems: 2, missingItems: 1, isLowerBound: true });
     }
     const other = await createProfileWithSecret();
     expect((await getRange(other, DATES[0]!, DATES[2]!)).body.nutrients.every((n: any) => n.total === null)).toBe(true);
   });
 
-  it('counts incomplete and current days, excludes skipped days, and recalculates corrected foods', async () => {
+  it('counts incomplete and current days, excludes skipped days, and recalculates corrected foods', withDayCompletion(async () => {
     const p = await createProfileWithSecret();
     const food = (await api('POST', '/foods', { body: { displayName: unique('range food'), baseUnit: 'serving', nutrients: { calories: 100, vitaminD: 0 } } })).body.food;
     await logDay(p.userId, DATES[0]!, [food.displayName]);
@@ -450,7 +464,7 @@ describe('recorded intake over an inclusive date range', () => {
     await logDay(p.userId, TODAY, [food.displayName]);
     expect(n(await getRange(p, TODAY), 'calories').total).toBe(120);
     expect((await getRange(p, TODAY, addDays(TODAY, 7))).body.range.through).toBe(TODAY);
-  });
+  }));
 
   it('handles leap years, full years and custom ranges without a weekly or monthly limit', async () => {
     const p = await createProfileWithSecret();

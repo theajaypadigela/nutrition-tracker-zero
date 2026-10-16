@@ -1,8 +1,8 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import { ListChecks, Plus } from 'lucide-react-native';
 import type { HistoryWeek, Mode, NutrientReport } from '@/api/types';
-import { Button, Card, Notice, Text, type NoticeTone } from '@/components/kit';
+import { Button, Card, ListGroup, ListRow, Notice, Text, type NoticeTone } from '@/components/kit';
 import { StackScreen } from '@/components/layout/StackScreen';
 import { fill } from '@/i18n/fill';
 import { strings } from '@/i18n/strings';
@@ -50,6 +50,7 @@ export function NutrientDetail({
   onBack,
   onSetGoal,
   onHowWeCalculate,
+  onOpenBreakdown,
 }: {
   report: NutrientReport;
   name: string;
@@ -61,6 +62,8 @@ export function NutrientDetail({
   onBack: () => void;
   onSetGoal: () => void;
   onHowWeCalculate: () => void;
+  /** Opens the logged items that add up to this nutrient's total over the same days. */
+  onOpenBreakdown?: () => void;
 }) {
   const styles = useStyles();
   const labels = weekDayLabels();
@@ -182,6 +185,18 @@ export function NutrientDetail({
       ) : null}
 
       {window === 'week' ? <TopSources sources={report.topSources} /> : null}
+
+      {onOpenBreakdown ? (
+        <ListGroup>
+          <ListRow
+            testID="detail-breakdown"
+            icon={ListChecks}
+            title={strings.breakdown.seeFoods}
+            subtitle={strings.breakdown.seeFoodsHint}
+            onPress={onOpenBreakdown}
+          />
+        </ListGroup>
+      ) : null}
 
       {target ? (
         <Card>

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, localDateIn, weekStartOf } from '../../src/domain/time';
 import { weeklyReportResponse } from '../../src/routes/reports';
 import { api, createProfileWithSecret, unique } from '../helpers';
+import { withDayCompletion } from '../features';
 
 const TODAY = localDateIn('Asia/Kolkata');
 const WEEK = addDays(weekStartOf(TODAY), -7);
@@ -173,7 +174,7 @@ describe('foods with gaps', () => {
 });
 
 describe('marking a day (plan 7.2)', () => {
-  it('sets, reads back, changes and clears a mark, in the day and in the range', async () => {
+  it('sets, reads back, changes and clears a mark, in the day and in the range', withDayCompletion(async () => {
     const { userId } = await createProfileWithSecret();
     const date = DATES[2]!;
     expect((await api('GET', `/days/${date}`, { userId })).body.status).toBeNull();
@@ -186,9 +187,9 @@ describe('marking a day (plan 7.2)', () => {
     expect((await api('DELETE', `/days/${date}/status`, { userId })).status).toBe(204);
     expect((await api('GET', `/days/${date}`, { userId })).body.status).toBeNull();
     expect((await api('DELETE', `/days/${date}/status`, { userId })).status).toBe(204); // clearing nothing is fine
-  });
+  }));
 
-  it('marks today, refuses tomorrow and nonsense, and keeps one person\'s marks from another', async () => {
+  it('marks today, refuses tomorrow and nonsense, and keeps one person\'s marks from another', withDayCompletion(async () => {
     const a = await createProfileWithSecret();
     const b = await createProfileWithSecret();
     expect((await api('PUT', `/days/${TODAY}/status`, { userId: a.userId, body: { status: 'partial' } })).status).toBe(200);
@@ -198,9 +199,9 @@ describe('marking a day (plan 7.2)', () => {
     expect((await api('PUT', `/days/nope/status`, { userId: a.userId, body: { status: 'skip' } })).status).toBe(400);
     expect((await api('PUT', `/days/${TODAY}/status`, { body: { status: 'skip' } })).status).toBe(400); // no profile
     expect((await api('GET', `/days/${TODAY}`, { userId: b.userId })).body.status).toBeNull();
-  });
+  }));
 
-  it('changes what the weekly report counts: a day left out is not there, a day marked complete is a day', async () => {
+  it('changes what the weekly report counts: a day left out is not there, a day marked complete is a day', withDayCompletion(async () => {
     const { userId, secret } = await createProfileWithSecret();
     const ok = (await create(food({ displayName: unique('meal'), baseUnit: 'plate', nutrients: { calories: 1800, protein: 70, carbs: 230, fat: 55 } }))).body.food;
     for (const d of DATES) await api('POST', `/days/${d}/items`, { userId, body: { items: [{ name: ok.displayName, quantity: 1, unit: 'plate' }] } });
@@ -213,9 +214,9 @@ describe('marking a day (plan 7.2)', () => {
     const quiet = await createProfileWithSecret();
     await api('PUT', `/days/${DATES[0]}/status`, { userId: quiet.userId, body: { status: 'complete' } });
     expect((await api('GET', `/reports/weekly?start=${WEEK}`, { userId: quiet.userId, secret: quiet.secret })).body.coverage.days[0].state).toBe('confirmed');
-  });
+  }));
 
-  it('is erased with the rest of the health data, and not before', async () => {
+  it('is erased with the rest of the health data, and not before', withDayCompletion(async () => {
     const p = await createProfileWithSecret();
     await api('PUT', `/days/${DATES[0]}/status`, { userId: p.userId, body: { status: 'skip' } });
     const count = () => env.DB.prepare('SELECT COUNT(*) AS n FROM day_status WHERE user_id = ?').bind(p.userId).first<{ n: number }>().then((r) => r!.n);
@@ -227,7 +228,7 @@ describe('marking a day (plan 7.2)', () => {
     });
     expect((await api('DELETE', '/me/health-data', { userId: p.userId, secret: p.secret })).status).toBe(204);
     expect(await count()).toBe(0);
-  });
+  }));
 });
 
 describe('typing a limit for saturated fat or added sugars (plan 6.4)', () => {

@@ -82,3 +82,15 @@ it('clears personal details while another account loads and ignores the previous
   expect(health.status).toBe('ready');
   expect(health.mode).toBe('generic');
 });
+
+it('keeps a failed profile load recoverable and allows retry', async () => {
+  (api.getHealthProfile as jest.Mock).mockRejectedValueOnce(new Error('Could not reach the server'));
+  await render();
+  expect(health.status).toBe('error');
+  expect(health.error).toBe('Could not reach the server');
+  expect(card.visible).toBe(false);
+  (api.getHealthProfile as jest.Mock).mockResolvedValueOnce(personal);
+  await act(async () => { await health.refresh(); });
+  expect(health.status).toBe('ready');
+  expect(health.error).toBeNull();
+});

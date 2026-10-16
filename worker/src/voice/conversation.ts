@@ -1,17 +1,20 @@
 // Share meal rules and the completion question across voice providers.
 import { buildFirstMessage, buildSystemPrompt, formatLogged } from '../vapi/prompt';
 import { planMeals } from '../vapi/meals';
+import { CALLBACK_FUNCTION } from '../domain/callback';
+import { FEATURES } from '../domain/features';
 import { LOGGED_UNITS, MEALS } from '../domain/units';
 import { weekdayOf } from '../domain/time';
 import type { VoiceContext } from './provider';
 
 export function conversation(c: VoiceContext) {
   const plan = planMeals(c.localTime, c.alreadyLogged.map(i => i.meal));
+  const dayCompletion = FEATURES.dayCompletion;
   return {
     greeting: buildFirstMessage(c.user.name, c.localTime, plan, c.alreadyLogged.length),
     prompt: buildSystemPrompt({ name: c.user.name, weekday: weekdayOf(c.localDate), localDate: c.localDate,
       localTime: c.localTime, alreadyLogged: formatLogged(c.alreadyLogged), units: LOGGED_UNITS, plan }) +
-      '\nWait for the save_foods result. If it reports an error, explain briefly, correct the list and retry; never say it was saved before success. To finish this conversation, you MUST call end_call with your short goodbye in its message argument. The app speaks that message and hangs up. Do not speak a separate goodbye or stop responding without calling end_call. This also applies when there is nothing to save. Do not call end_call before all saves have completed and the user has answered the day-completion question (unless they want to stop early).',
+      `\nWait for the save_foods result. If it reports an error, explain briefly, correct the list and retry; never say it was saved before success. To finish this conversation, you MUST call end_call with your short goodbye in its message argument. The app speaks that message and hangs up. Do not speak a separate goodbye or stop responding without calling end_call. This also applies when there is nothing to save. Do not call end_call before all saves have completed${dayCompletion ? ' and the user has answered the day-completion question' : ''} (unless they want to stop early).`,
     functions: [
       { name: 'save_foods', description: 'Save the complete user-confirmed list of new foods from this call; corrections replace that list.',
         parameters: { type: 'object', required: ['items'], properties: { items: { type: 'array', items: {
@@ -20,11 +23,14 @@ export function conversation(c: VoiceContext) {
             meal: { type: 'string', enum: [...MEALS] },
           },
         } } } } },
-      { name: 'mark_day_complete', description: 'Mark the call day complete only after an explicit yes to "Should I mark this day as complete?" Never call for food read-back confirmation alone.',
+      // Off while a person cannot mark a day (domain/features.ts): the call neither asks nor offers the tool.
+      ...(dayCompletion ? [{ name: 'mark_day_complete', description: 'Mark the call day complete only after an explicit yes to "Should I mark this day as complete?" Never call for food read-back confirmation alone.',
         parameters: { type: 'object', required: ['confirmed'], properties: {
           confirmed: { type: 'boolean', enum: [true], description: 'True only when the user explicitly agrees to mark the whole day complete.' },
-        } } },
-      { name: 'end_call', description: 'Speak a short goodbye and end the conversation. Required after saves and the day-completion question, or when the user wants to stop early.',
+        } } }] : []),
+      // The phone sets the reminder (the app answers this tool itself); see domain/callback.ts.
+      CALLBACK_FUNCTION,
+      { name: 'end_call', description: 'Speak a short goodbye and end the conversation. Required after saves, or when the user wants to stop early or asks to be called back later.',
         parameters: { type: 'object', required: ['message'], properties: {
           message: { type: 'string', description: 'The short goodbye that the app will speak before hanging up.' },
         } } },

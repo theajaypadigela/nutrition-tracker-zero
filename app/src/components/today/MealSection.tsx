@@ -63,6 +63,8 @@ export function MealSection({
 
   const name = meal ? capitalize(meal) : 'Other';
   const total = Math.round(items.reduce((sum, item) => sum + (item.nutrients.calories ?? 0), 0));
+  const known = items.filter(item => item.nutrients.calories != null).length;
+  const calorieText = known === 0 ? 'Unknown' : `${known < items.length ? 'At least ' : ''}${formatNumber(total)}`;
 
   return (
     <Card padding="none" testID={`meal-${meal ?? 'other'}`}>
@@ -74,10 +76,10 @@ export function MealSection({
         {numbersHidden ? null : (
           <View style={styles.total}>
             <Text variant="bodyStrong" tabular>
-              {formatNumber(total)}
+              {calorieText}
             </Text>
             <Text variant="small" tone="muted">
-              kcal
+              {known > 0 ? 'kcal' : ''}
             </Text>
           </View>
         )}

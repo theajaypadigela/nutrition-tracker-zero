@@ -17,6 +17,7 @@ jest.mock('@/embedded/runtime', () => {
 import { api, ApiError, deliverVapiMessage, setApiSecret, setApiUser } from '@/api/client';
 import { CONSENT_VERSION } from '@/i18n/strings';
 import { CallBridge } from '@/embedded/vapi';
+import { FEATURES } from '@/config/features';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -237,7 +238,26 @@ describe('a voice call on the phone', () => {
     expect(typeof row.duration_seconds).toBe('number');
   });
 
-  it('marks the day complete through the on-device bridge only after confirmation', async () => {
+  it('marks the day complete through the on-device bridge only after confirmation (switched on: it is off for now)', async () => {
+    const was = FEATURES.dayCompletion;
+    FEATURES.dayCompletion = true;
+    try {
+      await markThroughTheBridge();
+    } finally {
+      FEATURES.dayCompletion = was;
+    }
+  });
+
+  it('does not mark the day through the on-device bridge while day marking is off, and the call is not disturbed', async () => {
+    await newProfile('Off caller');
+    const started = await startCall();
+    const bridge = new CallBridge({ callRowId: started.callId, localDate: started.localDate, deliver: deliverVapiMessage });
+    await bridge.onMessage({ type: 'tool-calls', toolCallList: [{ id: 'mark', function: { name: 'mark_day_complete', arguments: { confirmed: true } } }] });
+    expect((await api.getDay(started.localDate)).status).toBeNull();
+    await bridge.finish('assistant-ended-call');
+  });
+
+  async function markThroughTheBridge() {
     await newProfile('Complete caller');
     const started = await startCall();
     const bridge = new CallBridge({ callRowId: started.callId, localDate: started.localDate, deliver: deliverVapiMessage });
@@ -250,7 +270,7 @@ describe('a voice call on the phone', () => {
     await bridge.onMessage(mark('confirmed', true));
     expect((await api.getDay(started.localDate)).status).toBe('partial');
     await bridge.finish('assistant-ended-call');
-  });
+  }
 
   it('finds the call by metadata when the save arrives before Vapi has named the call', async () => {
     await newProfile('Early');
@@ -287,4 +307,18 @@ describe('a voice call on the phone', () => {
     expect(day.items).toHaveLength(0);
     expect(day.calls.find((c) => c.vapiCallId === 'vapi-call-3')!.status).toBe('no_list');
   });
+});
+
+
+it('serves all nutrient totals and averages through the on-device API client', async () => {
+  await newProfile('Range reports on device');
+  const food = (await api.createFood({ displayName: 'Range vitamin food', baseUnit: 'serving', nutrients: { calories: 200, vitaminB12: 1.2, folate: 40, addedSugar: 0 } })).food;
+  await api.addItems('2024-02-01', [{ name: food.displayName, quantity: 2, unit: 'serving' }]);
+  await api.addItems('2024-02-29', [{ name: food.displayName, quantity: 1, unit: 'serving' }]);
+  const report = await api.getRangeReport('2024-02-01', '2024-02-29');
+  expect(report.nutrients).toHaveLength((await api.meta()).nutrients.length);
+  expect(report.coverage).toMatchObject({ calendarDays: 29, loggedDays: 2, itemCount: 2 });
+  expect(report.nutrients.find(n => n.nutrient === 'vitaminB12')).toMatchObject({ total: 3.6, meanPerLoggedDay: 1.8, missingItems: 0 });
+  expect(report.nutrients.find(n => n.nutrient === 'addedSugar')?.total).toBe(0);
+  expect(report.nutrients.find(n => n.nutrient === 'vitaminD')?.total).toBeNull();
 });

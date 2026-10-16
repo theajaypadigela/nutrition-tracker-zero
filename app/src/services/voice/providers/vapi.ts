@@ -1,7 +1,7 @@
 import Vapi from '@vapi-ai/react-native';
 import { deliverVapiMessage } from '@/api/client';
 import { ON_DEVICE } from '@/config/local';
-import { CallBridge } from '@/embedded/vapi';
+import { CallBridge, SCHEDULE_CALLBACK, voiceToolCallsOf } from '@/embedded/vapi';
 import { createCallAudioSession, openOnEarpiece } from '@/services/calls/callAudio';
 import { describeVapiError, isMeetingEnded } from '@/services/calls/vapiErrors';
 import type { VoiceEndReason } from '../../../../../shared/voice';
@@ -18,6 +18,7 @@ export const vapiProvider: VoiceProvider = {
     let active = false;
     let finishing: Promise<void> | null = null;
     let reason: VoiceEndReason = 'assistant-ended-call';
+    const callbacksSeen = new Set<string>();
     const finish = () => {
       if (finishing) return finishing;
       ended = true;
@@ -42,6 +43,13 @@ export const vapiProvider: VoiceProvider = {
     vapi.on('speech-end', () => cb.onSpeaking(false));
     vapi.on('message', (msg: any) => {
       bridge?.onMessage(msg);
+      // "Call me again in 20 minutes": the server (or the on-device bridge) answers the model; the phone arms the reminder, once per call.
+      for (const call of voiceToolCallsOf(msg, [SCHEDULE_CALLBACK])) {
+        const id = call.id ?? `${SCHEDULE_CALLBACK}:${JSON.stringify(call.arguments)}`;
+        if (callbacksSeen.has(id)) continue;
+        callbacksSeen.add(id);
+        cb.onFunction({ id, name: SCHEDULE_CALLBACK, arguments: call.arguments }).catch(() => {});
+      }
       if (msg?.type === 'transcript' && msg.transcriptType === 'final' && typeof msg.transcript === 'string') {
         cb.onTranscript({ role: msg.role === 'user' ? 'user' : 'assistant', text: msg.transcript });
       }

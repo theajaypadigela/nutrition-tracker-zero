@@ -4,29 +4,40 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { CheckCircle2 } from 'lucide-react-native';
 import { api, errorMessage } from '@/api/client';
 import type { MissingUnit, UnknownFood } from '@/api/types';
-import { Button, Card, Chip, EmptyState, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
+import { Badge, Button, Card, Chip, Divider, EmptyState, LoadingState, Notice, SectionHeader, Text } from '@/components/kit';
 import { FoodGapsList } from '@/components/food/FoodGapsList';
 import { TabScreen } from '@/components/layout/TabScreen';
 import { useAsync } from '@/hooks/useAsync';
+import { useToday } from '@/hooks/useToday';
+import { fill } from '@/i18n/fill';
+import { strings, where } from '@/i18n/strings';
 import { useHealth } from '@/state/HealthContext';
 import { useMeta } from '@/state/MetaContext';
 import { setPendingTotal } from '@/state/pendingStore';
 import { space } from '@/theme';
-import { where } from '@/i18n/strings';
+import { formatDay } from '@/utils/dates';
+
+const t = strings.pending;
 
 const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
+/** Which list a card is in: the person's own items, or everyone's. */
+type Scope = 'mine' | 'global';
+
 /**
- * Everything anyone has logged that still can't be counted: foods nobody has entered values
- * for, and units nobody has converted. Fixing one fixes it for everyone, retroactively.
+ * What cannot be counted yet, in two lists that are never mixed. "My pending items" are the foods and units this person logged
+ * (newest first); "Global pending items" are everything anyone logged (most-logged first), with a mark on the ones this person also
+ * logged. Fixing one fixes it for everyone, retroactively, whichever list it was opened from.
  */
 export default function UncachedScreen() {
   const { data, error, loading, reload } = useAsync(() => api.uncached(), []);
-  // Next to what is pending: the foods that have a value for energy but lack the ones the weekly view reads (plan 7.4).
+  // After the two lists: the foods that have a value for energy but lack the ones the weekly view reads (plan 7.4), from this person's
+  // own last four weeks. A different worklist from what is pending, so it keeps its own place at the end.
   const gaps = useAsync(() => api.getFoodGaps(), []);
   const navigation = useNavigation();
   const meta = useMeta();
   const health = useHealth();
+  const today = useToday();
   const [notice, setNotice] = useState<string | null>(null);
   useFocusEffect(
     useCallback(() => {
@@ -36,16 +47,32 @@ export default function UncachedScreen() {
     }, [reload]),
   );
 
-  const total = (data?.totals.unknownFoods ?? 0) + (data?.totals.missingUnits ?? 0);
-  // Keep the tab badge in step with what this screen just loaded.
+  const mine = data?.mine;
+  const globalTotal = (data?.totals.unknownFoods ?? 0) + (data?.totals.missingUnits ?? 0);
+  const mineTotal = (mine?.totals.unknownFoods ?? 0) + (mine?.totals.missingUnits ?? 0);
+  // The tab's badge counts what is waiting on this person; an older Worker has no "mine" and counts everything, as it always did.
+  const badge = mine ? mineTotal : globalTotal;
   useEffect(() => {
-    if (data) setPendingTotal(total);
-  }, [data, total]);
+    if (data) setPendingTotal(badge);
+  }, [data, badge]);
+
+  const onResolved = (msg: string) => {
+    setNotice(msg);
+    reload();
+  };
+
+  const subtitle = !data
+    ? undefined
+    : globalTotal === 0 && mineTotal === 0
+      ? t.nothing
+      : mine
+        ? fill(t.subtitle, { mine: mineTotal, all: globalTotal })
+        : fill(t.subtitleOnly, { n: globalTotal });
 
   return (
     <TabScreen
-      title="Pending"
-      subtitle={data ? (total > 0 ? `${total} waiting for values` : 'Nothing waiting') : undefined}
+      title={t.title}
+      subtitle={subtitle}
       refreshing={loading && !!data}
       onRefresh={() => {
         reload();
@@ -59,59 +86,28 @@ export default function UncachedScreen() {
       ) : null}
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {!data && loading ? <LoadingState /> : null}
-      {data && total === 0 ? (
-        <EmptyState
-          icon={CheckCircle2}
-          title="All caught up"
-          body={where.uncachedEmpty}
-        />
-      ) : null}
-      {data && total > 0 ? (
-        <Text variant="small" tone="muted">
-          {where.uncachedLead}
-        </Text>
+
+      {data && mine ? (
+        <PendingSection testID="pending-mine" title={t.mine} count={mineTotal} lead={where.pendingMineLead}>
+          {mineTotal === 0 ? (
+            <Text variant="body" tone="secondary" testID="pending-mine-empty">
+              {where.pendingMineEmpty}
+            </Text>
+          ) : null}
+          <PendingGroups scope="mine" scopeData={mine} today={today} onResolved={onResolved} />
+        </PendingSection>
       ) : null}
 
-      {data && data.unknownFoods.length > 0 ? (
-        <View style={{ gap: space.md }}>
-          <SectionHeader
-            title="Unknown foods"
-            right={
-              <Text variant="small" tone="muted" tabular>
-                {data.totals.unknownFoods}
-              </Text>
-            }
-          />
-          {data.unknownFoods.map(f => (
-            <UnknownFoodCard
-              key={f.normalizedName}
-              food={f}
-              onResolved={msg => {
-                setNotice(msg);
-                reload();
-              }}
-            />
-          ))}
-        </View>
+      {data && mine ? <Divider /> : null}
+
+      {data ? (
+        <PendingSection testID="pending-global" title={t.global} count={globalTotal} lead={mine ? where.pendingGlobalLead : where.uncachedLead}>
+          {globalTotal === 0 ? <EmptyState icon={CheckCircle2} title="All caught up" body={mine ? where.pendingGlobalEmpty : where.uncachedEmpty} /> : null}
+          <PendingGroups scope="global" scopeData={data} today={today} onResolved={onResolved} />
+        </PendingSection>
       ) : null}
 
-      {data && data.missingUnits.length > 0 ? (
-        <View style={{ gap: space.md }}>
-          <SectionHeader
-            title="Missing unit conversions"
-            right={
-              <Text variant="small" tone="muted" tabular>
-                {data.totals.missingUnits}
-              </Text>
-            }
-          />
-          {data.missingUnits.map(m => (
-            <MissingUnitCard key={`${m.foodId}:${m.unit}`} missing={m} />
-          ))}
-        </View>
-      ) : null}
-
-      {gaps.data ? (
+      {data && gaps.data ? (
         <FoodGapsList
           gaps={gaps.data}
           nutrients={meta.nutrients}
@@ -123,7 +119,100 @@ export default function UncachedScreen() {
   );
 }
 
-function UnknownFoodCard({ food, onResolved }: { food: UnknownFood; onResolved: (message: string) => void }) {
+/** One of the two lists: its name and how many are waiting, one line on what it is, then its groups. */
+function PendingSection({
+  testID,
+  title,
+  count,
+  lead,
+  children,
+}: {
+  testID: string;
+  title: string;
+  count: number;
+  lead: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View testID={testID} style={{ gap: space.lg }}>
+      <View style={{ gap: space.xs }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+          <Text variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+            {title}
+          </Text>
+          <Badge label={fill(t.countLabel, { n: count })} tone={count > 0 ? 'warning' : 'success'} />
+        </View>
+        <Text variant="small" tone="muted">
+          {lead}
+        </Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Unknown foods, then missing unit conversions, of one scope. */
+function PendingGroups({
+  scope,
+  scopeData,
+  today,
+  onResolved,
+}: {
+  scope: Scope;
+  scopeData: { totals: { unknownFoods: number; missingUnits: number }; unknownFoods: UnknownFood[]; missingUnits: MissingUnit[] };
+  today: string;
+  onResolved: (message: string) => void;
+}) {
+  return (
+    <>
+      {scopeData.unknownFoods.length > 0 ? (
+        <View style={{ gap: space.md }}>
+          <SectionHeader
+            title={t.unknownFoods}
+            right={
+              <Text variant="small" tone="muted" tabular>
+                {scopeData.totals.unknownFoods}
+              </Text>
+            }
+          />
+          {scopeData.unknownFoods.map(f => (
+            <UnknownFoodCard key={`${scope}:${f.normalizedName}`} scope={scope} food={f} today={today} onResolved={onResolved} />
+          ))}
+        </View>
+      ) : null}
+
+      {scopeData.missingUnits.length > 0 ? (
+        <View style={{ gap: space.md }}>
+          <SectionHeader
+            title={t.missingUnits}
+            right={
+              <Text variant="small" tone="muted" tabular>
+                {scopeData.totals.missingUnits}
+              </Text>
+            }
+          />
+          {scopeData.missingUnits.map(m => (
+            <MissingUnitCard key={`${scope}:${m.foodId}:${m.unit}`} scope={scope} missing={m} today={today} />
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+const lastLogged = (date: string | undefined, today: string) => (date ? fill(t.lastLogged, { when: formatDay(date, today).toLowerCase() }) : null);
+
+function UnknownFoodCard({
+  scope,
+  food,
+  today,
+  onResolved,
+}: {
+  scope: Scope;
+  food: UnknownFood;
+  today: string;
+  onResolved: (message: string) => void;
+}) {
   const navigation = useNavigation();
   const [busy, setBusy] = useState(false);
 
@@ -146,12 +235,22 @@ function UnknownFoodCard({ food, onResolved }: { food: UnknownFood; onResolved: 
       },
     ]);
 
+  const detail =
+    scope === 'mine'
+      ? [plural(food.itemCount, 'item'), food.units.join(', '), lastLogged(food.lastDate, today)].filter(Boolean).join(' · ')
+      : `${plural(food.itemCount, 'item')} · ${where.whoLogged(food.userCount)}in ${food.units.join(', ')}`;
+
   return (
-    <Card>
+    <Card testID={`pending-food-${scope}-${food.normalizedName}`}>
       <View style={{ gap: space.xs }}>
-        <Text variant="title3">{food.examples[0] ?? food.normalizedName}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+          <Text variant="title3" style={{ flex: 1 }}>
+            {food.examples[0] ?? food.normalizedName}
+          </Text>
+          {scope === 'global' && (food.myItemCount ?? 0) > 0 ? <Badge label={t.yours} tone="success" /> : null}
+        </View>
         <Text variant="small" tone="muted">
-          {`${plural(food.itemCount, 'item')} · ${where.whoLogged(food.userCount)}in ${food.units.join(', ')}`}
+          {detail}
         </Text>
         {food.examples.length > 1 ? (
           <Text variant="caption" tone="muted">
@@ -192,14 +291,21 @@ function UnknownFoodCard({ food, onResolved }: { food: UnknownFood; onResolved: 
   );
 }
 
-function MissingUnitCard({ missing }: { missing: MissingUnit }) {
+function MissingUnitCard({ scope, missing, today }: { scope: Scope; missing: MissingUnit; today: string }) {
   const navigation = useNavigation();
+  const detail =
+    scope === 'mine'
+      ? [`Stored per ${missing.baseUnit}`, plural(missing.itemCount, 'item'), lastLogged(missing.lastDate, today)].filter(Boolean).join(' · ')
+      : `Stored per ${missing.baseUnit} · ${plural(missing.itemCount, 'item')}${where.whoLogged(missing.userCount, true)}`;
   return (
-    <Card>
+    <Card testID={`pending-unit-${scope}-${missing.foodId}-${missing.unit}`}>
       <View style={{ gap: space.xs }}>
-        <Text variant="title3">{`${missing.foodName} in ${missing.unit}`}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+          <Text variant="title3" style={{ flex: 1 }}>{`${missing.foodName} in ${missing.unit}`}</Text>
+          {scope === 'global' && (missing.myItemCount ?? 0) > 0 ? <Badge label={t.yours} tone="success" /> : null}
+        </View>
         <Text variant="small" tone="muted">
-          {`Stored per ${missing.baseUnit} · ${plural(missing.itemCount, 'item')}${where.whoLogged(missing.userCount, true)}`}
+          {detail}
         </Text>
       </View>
       <View style={{ marginTop: space.lg }}>

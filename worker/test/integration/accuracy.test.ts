@@ -9,6 +9,7 @@ import wranglerConfig from '../../wrangler.jsonc?raw';
 import { addDays, localDateIn, weekStartOf } from '../../src/domain/time';
 import { weeklyReportResponse } from '../../src/routes/reports';
 import { api, createProfileWithSecret, unique } from '../helpers';
+import { withDayCompletion } from '../features';
 
 const TODAY = localDateIn('Asia/Kolkata');
 const WEEK = addDays(weekStartOf(TODAY), -7);
@@ -94,7 +95,7 @@ describe('whether a day counts, on the day itself (plan 7.2)', () => {
   const meal = async (kcal: number) => (await create({ displayName: unique('meal'), baseUnit: 'plate', nutrients: { calories: kcal } })).body.food.displayName as string;
   const stateOf = async (userId: string, date: string, secret?: string) => (await api('GET', `/days/${date}`, { userId, secret })).body.dayState;
 
-  it('reads a past day as the report would: not logged, looks incomplete (and why), logged, or marked', async () => {
+  it('reads a past day as the report would: not logged, looks incomplete (and why), logged, or marked', withDayCompletion(async () => {
     const { userId } = await createProfileWithSecret();
     const small = await meal(300);
     const full = await meal(1800);
@@ -111,7 +112,7 @@ describe('whether a day counts, on the day itself (plan 7.2)', () => {
     await api('PUT', `/days/${DATES[3]}/status`, { userId, body: { status: 'skip' } });
     expect(await stateOf(userId, DATES[3]!)).toEqual({ state: 'skipped', reason: null });
     expect((await stateOf(userId, TODAY)).state).toBe('in_progress');
-  });
+  }));
 
   it('uses the personal energy target only with the secret, as the report does', async () => {
     const p = await createProfileWithSecret();

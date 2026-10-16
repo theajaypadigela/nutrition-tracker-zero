@@ -2,11 +2,7 @@ import { addDays, addMonths, monthBounds, monthOf, weekStart } from './dates';
 
 export type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'custom';
 
-export function reportBounds(
-  period: ReportPeriod,
-  anchor: string,
-  custom: { from: string; to: string },
-) {
+export function reportBounds(period: ReportPeriod, anchor: string, custom: { from: string; to: string }) {
   switch (period) {
     case 'day':
       return { from: anchor, to: anchor };
@@ -26,11 +22,7 @@ export function reportBounds(
   }
 }
 
-export function shiftReport(
-  period: ReportPeriod,
-  anchor: string,
-  step: number,
-): string {
+export function shiftReport(period: ReportPeriod, anchor: string, step: number): string {
   switch (period) {
     case 'day':
       return addDays(anchor, step);

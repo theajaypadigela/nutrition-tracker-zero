@@ -20,6 +20,7 @@ import { useHealthCard } from '@/hooks/useHealthCard';
 import { useToday } from '@/hooks/useToday';
 import { strings, where } from '@/i18n/strings';
 import type { TabParamList } from '@/navigation/types';
+import { FEATURES } from '@/config/features';
 import { useHealth } from '@/state/HealthContext';
 import { applySchedule } from '@/services/calls/schedule';
 import { useMeta } from '@/state/MetaContext';
@@ -51,6 +52,7 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       day.reload();
+      settings.reload();
       health.refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shown, health.refresh]),
@@ -87,8 +89,13 @@ export default function TodayScreen() {
   const itemCount = day.data?.items.length ?? 0;
   // A past day the weekly figures leave out because very little is logged: ask whether that is everything (plan 7.2). A day that
   // is incomplete because its foods are unknown has the Pending notice instead, and one the person marked has their mark.
+  // Off for now with the rest of day marking (config/features.ts): the question has no answer while nothing can be marked.
   const looksIncomplete =
-    !!day.data && shown < today && day.data.dayState?.state === 'partial' && day.data.dayState.reason === 'low';
+    FEATURES.dayCompletion &&
+    !!day.data &&
+    shown < today &&
+    day.data.dayState?.state === 'partial' &&
+    day.data.dayState.reason === 'low';
 
   const saveCallSettings = async (patch: Partial<Pick<Settings, 'callTime' | 'callEnabled'>>) => {
     try {
@@ -171,9 +178,12 @@ export default function TodayScreen() {
             target={target}
             targetIsReference={targetIsReference}
             totals={day.data.totals}
+            itemCount={day.data.items.length}
             goals={day.data.goals}
             units={units}
             kinds={kinds}
+            nutrients={meta.nutrients}
+            onOpenNutrient={key => navigation.navigate('NutrientBreakdown', { nutrient: key, from: shown, to: shown, origin: 'today' })}
           />
         ) : null}
 
@@ -186,7 +196,7 @@ export default function TodayScreen() {
           />
         ) : null}
 
-        {day.data ? (
+        {FEATURES.dayCompletion && day.data ? (
           <ListGroup>
             <ListRow
               testID="mark-day"
@@ -283,7 +293,9 @@ export default function TodayScreen() {
         onDelete={confirmDelete}
         numbersHidden={health.numbersHidden}
       />
-      <DayStatusSheet visible={markSheet} onClose={() => setMarkSheet(false)} current={day.data?.status ?? null} onChange={mark} />
+      {FEATURES.dayCompletion ? (
+        <DayStatusSheet visible={markSheet} onClose={() => setMarkSheet(false)} current={day.data?.status ?? null} onChange={mark} />
+      ) : null}
       <AddMenuSheet
         visible={addMenu}
         onClose={() => setAddMenu(false)}

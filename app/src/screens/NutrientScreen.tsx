@@ -7,6 +7,7 @@ import { useWeeklyReport } from '@/hooks/useWeeklyReport';
 import { strings } from '@/i18n/strings';
 import { useMeta } from '@/state/MetaContext';
 import type { RootStackParamList } from '@/navigation/types';
+import { addDays } from '@/utils/dates';
 import { nutrientInfo } from '@/utils/report';
 
 /**
@@ -44,6 +45,15 @@ export default function NutrientScreen() {
         onBack={() => navigation.goBack()}
         onSetGoal={() => navigation.navigate('Goals')}
         onHowWeCalculate={() => navigation.navigate('Targets')}
+        // The week it was opened from, or for a vitamin the four weeks that end with it (the window that judges it).
+        onOpenBreakdown={() =>
+          navigation.navigate('NutrientBreakdown', {
+            nutrient: params.key,
+            from: window === 'four_weeks' ? addDays(params.start, 6 - 27) : params.start,
+            to: addDays(params.start, 6),
+            origin: 'report',
+          })
+        }
       />
     );
   }

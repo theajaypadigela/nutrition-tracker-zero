@@ -11,6 +11,7 @@ import { strings, where } from '@/i18n/strings';
 import { space } from '@/theme';
 import { conversionMode, servingsFrom } from '@/utils/conversion';
 import { conversionText } from './FoodEditorScreen';
+import { readNumber } from '@/utils/foodData';
 
 /** The helpings people measure cooked food in (the Worker asks the same question on save, plan 7.7). */
 const COOKED_SERVINGS = ['katori', 'bowl', 'plate', 'serving'];
@@ -26,9 +27,8 @@ export default function UnitConversionScreen() {
   const food = useAsync(() => api.getFood(params.foodId), [params.foodId]);
   const rawNote = food.data?.form === 'raw' && COOKED_SERVINGS.includes(params.unit);
 
-  const n = Number(value);
-  const valid = Number.isFinite(n) && n > 0;
-  const servings = valid ? servingsFrom(mode, n) : null;
+  const n = readNumber(value);
+  const servings = n !== null && n > 0 ? servingsFrom(mode, n) : null;
 
   const prompt =
     mode.kind === 'per100'

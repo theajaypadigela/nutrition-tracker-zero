@@ -24,6 +24,7 @@ jest.mock('@/state/MetaContext', () => ({ useMeta: jest.fn() }));
 jest.mock('@/state/ProfileContext', () => ({ useProfile: () => ({ profile: { id: 'u', name: 'Zoe' } }) }));
 
 import type { Insight, WeeklyReport } from '@/api/types';
+import { FEATURES } from '@/config/features';
 import { CoverageCard } from '@/components/report/CoverageCard';
 import { EnergyCard } from '@/components/report/EnergyCard';
 import { IntakeCard, intakeFigure, trendSentence } from '@/components/report/IntakeCard';
@@ -32,6 +33,7 @@ import { NutrientDetail } from '@/components/report/NutrientDetail';
 import { NutrientLine, keepTargetTogether } from '@/components/report/NutrientLine';
 import { ScoreBreakdown } from '@/components/report/ScoreBreakdown';
 import { ScoreCard, scoreFigure } from '@/components/report/ScoreCard';
+import { useRangeReport } from '@/hooks/useRangeReport';
 import { useWeeklyReport } from '@/hooks/useWeeklyReport';
 import { useHealth } from '@/state/HealthContext';
 import { fill, printNumber } from '@/i18n/fill';
@@ -389,9 +391,10 @@ describe('the coverage card (plan 5.2, 7.6)', () => {
     expect(labelled(tree, 'Thursday, October 8, not yet')).toHaveLength(1);
   });
 
-  it('marks a day that looks incomplete, and one that was left out, by words as well as shape', async () => {
+  it('marks a day that is not counted for lack of data by words as well as shape, without asking whether it is complete', async () => {
     const t = await card(R.crash_diet!);
-    expect(labelled(t, 'Monday, October 5, looks incomplete')).toHaveLength(1);
+    expect(labelled(t, 'Monday, October 5, not counted, too little to go on')).toHaveLength(1);
+    expect(all(t)).not.toMatch(/incomplete/i);
   });
 
   it('tells this week from last week, and cannot go past this one', async () => {
@@ -660,9 +663,24 @@ describe('the Report tab', () => {
     showing(R.crash_diet!);
     const tree = await render(<ReportScreen />);
     const ids = tree.root.findAll((n: ReactTestInstance) => typeof n.props.testID === 'string' && n.props.testID.startsWith('insight-') && typeof n.type !== 'string').map(n => n.props.testID);
-    expect([...new Set(ids)]).toEqual(['insight-low_intake', 'insight-incomplete_days', 'insight-few_days']);
+    // "…looks incomplete. Is that everything you ate?" asks the person to say whether a day is complete: not offered while day marking is off.
+    expect([...new Set(ids)]).toEqual(['insight-low_intake', 'insight-few_days']);
     expect(all(tree)).toContain('On 7 days you logged under 1,200 kcal.');
+    expect(all(tree)).not.toMatch(/looks incomplete|everything you ate/i);
     expect(has(tree, 'score-figure')).toBe(false);
+  });
+
+  it('offers the "looks incomplete" insight again when day marking is switched back on', async () => {
+    const was = FEATURES.dayCompletion;
+    FEATURES.dayCompletion = true;
+    try {
+      showing(R.crash_diet!);
+      const tree = await render(<ReportScreen />);
+      const ids = tree.root.findAll((n: ReactTestInstance) => typeof n.props.testID === 'string' && n.props.testID.startsWith('insight-') && typeof n.type !== 'string').map(n => n.props.testID);
+      expect([...new Set(ids)]).toEqual(['insight-low_intake', 'insight-incomplete_days', 'insight-few_days']);
+    } finally {
+      FEATURES.dayCompletion = was;
+    }
   });
 
   it('with fewer than three days: the prompt, "logged so far", no verdicts, no score figure', async () => {
@@ -1073,3 +1091,20 @@ describe('every report the Worker sends is complete', () => {
 });
 
 export type { Insight };
+
+
+it('selects each reporting period and keeps weekly assessments on the weekly view', async () => {
+  const tree = await render(<ReportScreen />);
+  for (const [label, from, to] of [
+    ['Daily', '2026-10-11', '2026-10-11'],
+    ['Monthly', '2026-10-01', '2026-10-31'],
+    ['Yearly', '2026-01-01', '2026-12-31'],
+    ['Custom', '2026-10-05', '2026-10-11'],
+    ['Weekly', '2026-10-05', '2026-10-11'],
+  ]) {
+    await press(tree, label!);
+    expect((useRangeReport as jest.Mock).mock.calls.at(-1)).toEqual([from, to]);
+    expect(has(tree, 'energy-card')).toBe(label === 'Weekly');
+  }
+  await act(async () => tree.unmount());
+});

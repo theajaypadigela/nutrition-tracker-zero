@@ -245,6 +245,10 @@ export interface UnknownFood {
   units: string[];
   itemCount: number;
   userCount: number;
+  /** How many of these items are the asker's own. Absent from an older Worker. */
+  myItemCount?: number;
+  /** In the asker's own list: the day they last logged it. */
+  lastDate?: string;
   suggestions: Suggestion[];
 }
 
@@ -255,12 +259,23 @@ export interface MissingUnit {
   unit: string;
   itemCount: number;
   userCount: number;
+  myItemCount?: number;
+  lastDate?: string;
 }
 
-export interface Uncached {
+/** The pending items of one scope: counts, then the groups (foods nobody has entered, units nobody has converted). */
+export interface PendingScope {
   totals: { unknownFoods: number; missingUnits: number };
   unknownFoods: UnknownFood[];
   missingUnits: MissingUnit[];
+}
+
+/**
+ * Everything pending, in two scopes. The top level is everyone's ("Global pending items", most-logged first); `mine` is what this person
+ * logged ("My pending items", newest first). `mine` is absent from an older Worker, and when the request names no one.
+ */
+export interface Uncached extends PendingScope {
+  mine?: PendingScope;
 }
 
 export interface ItemInput {
@@ -661,6 +676,36 @@ export interface WeeklyReport {
   /** Oldest first, ending with the reported week. */
   history: HistoryWeek[];
   disclaimerId: string;
+}
+
+/** One logged item behind a nutrient's total, with what it contributed (`null`: not known, so it added nothing). */
+export interface BreakdownItem {
+  id: string;
+  date: string;
+  meal: Meal | null;
+  rawName: string;
+  foodName: string | null;
+  quantity: number;
+  unit: string;
+  foodId: string | null;
+  status: ItemStatus;
+  amount: number | null;
+}
+
+/**
+ * The logged items that add up to one nutrient's total over a span of days (`GET /reports/breakdown`, or built from a day the app already
+ * has with the same function). `total` is the figure the dashboard shows; it is null when no item has a value, and `isLowerBound` when
+ * some do not.
+ */
+export interface NutrientBreakdown {
+  nutrient: string;
+  total: number | null;
+  knownItems: number;
+  missingItems: number;
+  isLowerBound: boolean;
+  items: BreakdownItem[];
+  range?: { from: string; to: string; through: string };
+  display?: { numbersHidden: boolean };
 }
 
 /** Inclusive recorded-intake totals; missing food values are unknown, never zero. */

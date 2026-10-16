@@ -19,7 +19,7 @@ import { recordRing } from '@/services/calls/scheduleStore';
  * screen, and every cold start / resume runs reconciliation. `signedIn` is null until the stored
  * profile has loaded; nothing runs then, so a cold start never looks like a sign-out.
  */
-export function useCallRouting(signedIn: boolean | null) {
+export function useCallRouting(signedIn: boolean | null, profileId?: string) {
   useEffect(() => {
     if (signedIn === null) return;
     if (!signedIn) {
@@ -46,7 +46,7 @@ export function useCallRouting(signedIn: boolean | null) {
     const run = (reason: string) => {
       const next = queue.then(async () => {
         await consume();
-        await reconcile(reason, { signedIn: true });
+        await reconcile(reason, { signedIn: true, profileId });
       });
       queue = next.catch((e) => reminderLog.warn('routing.failed', String(e)));
     };
@@ -78,5 +78,5 @@ export function useCallRouting(signedIn: boolean | null) {
       unsubscribeNative();
       unsubscribeForeground();
     };
-  }, [signedIn]);
+  }, [signedIn, profileId]);
 }

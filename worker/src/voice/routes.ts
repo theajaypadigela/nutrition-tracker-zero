@@ -1,5 +1,7 @@
 import { badRequest, conflict, json, notFound, nowIso, readJson } from '../http';
 import { callJson, loadIndex, type CallRow } from '../db/queries';
+import { callbackReply, CALLBACK_TOOL, parseCallbackMinutes } from '../domain/callback';
+import { FEATURES } from '../domain/features';
 import { parseItemList, prepareItems } from '../domain/items';
 import { localDateIn, localTimeIn } from '../domain/time';
 import type { LoggedItem } from '../vapi/prompt';
@@ -67,6 +69,15 @@ export function registerVoiceRoutes(router: Router): void {
     if (call.ended_reason) throw conflict('call_ended', 'This call has already ended');
     const body = asObject(await readJson(c.req));
     const id = trimmedString(body.id, 'id', 1, 200);
+    if (body.name === CALLBACK_TOOL) {
+      // The app arms the reminder itself (only the phone can ring itself) and does not need this; a client that forwards the call gets the
+      // same check and the same words, and nothing is stored.
+      const asked = parseCallbackMinutes(body.arguments);
+      return json('error' in asked ? { error: asked.error } : { result: callbackReply(asked.minutes, Date.now() + asked.minutes * 60_000, c.user!.timezone) });
+    }
+    if (body.name === 'mark_day_complete' && !FEATURES.dayCompletion) {
+      return json({ error: 'Marking a day complete is not available. Say a short goodbye and end the call.' });
+    }
     if (body.name !== 'save_foods' && body.name !== 'mark_day_complete') return json({ error: 'Unknown function' });
     const processed = JSON.parse(call.processed_tool_call_ids) as { id: string; n: number }[];
     const prior = processed.find(p => p.id === id);

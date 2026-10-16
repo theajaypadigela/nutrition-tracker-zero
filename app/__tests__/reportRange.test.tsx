@@ -1,9 +1,12 @@
 import React from 'react';
 
+jest.mock('@react-native-community/datetimepicker', () => 'DatePicker');
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 import TestRenderer, { act } from 'react-test-renderer';
 import type { RangeReport, Meta } from '@/api/types';
 import { Button, Segmented } from '@/components/kit';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { PeriodPicker } from '@/components/report/PeriodPicker';
 import { RangeIntakeCard } from '@/components/report/RangeIntakeCard';
 import { ThemeProvider } from '@/theme';
 import { reportBounds, shiftReport } from '@/utils/reportRange';
@@ -65,40 +68,19 @@ it('expands to every nutrient, switches totals to logged-day averages, and colla
       </ThemeProvider>,
     );
   });
-  const rows = () =>
-    tree.root.findAll(
-      n =>
-        n.type === 'View' &&
-        String(n.props.testID).startsWith('range-nutrient-'),
-    );
+  const rows = () => tree.root.findAll(n => (n.type as unknown) === 'View' && String(n.props.testID).startsWith('range-nutrient-'));
   expect(rows()).toHaveLength(4);
   expect(
-    tree.root.findAll(
-      n =>
-        n.props.accessibilityLabel ===
-        'Calories, At least 400 kcal, 1 entries missing this nutrient',
-    ).length,
+    tree.root.findAll(n => n.props.accessibilityLabel === 'Calories, At least 400 kcal, One entry missing this nutrient').length,
   ).toBeGreaterThan(0);
-  await act(async () =>
-    tree.root.findByType(Segmented).props.onChange('average'),
-  );
+  await act(async () => tree.root.findByType(Segmented).props.onChange('average'));
   expect(
-    tree.root.findAll(
-      n =>
-        n.props.accessibilityLabel ===
-        'Calories, At least 200 kcal, 1 entries missing this nutrient',
-    ).length,
+    tree.root.findAll(n => n.props.accessibilityLabel === 'Calories, At least 200 kcal, One entry missing this nutrient').length,
   ).toBeGreaterThan(0);
   await act(async () => tree.root.findByType(Button).props.onPress());
   expect(rows()).toHaveLength(meta.nutrients.length);
-  expect(
-    rows().find(n => n.props.testID === 'range-nutrient-vitaminD')?.props
-      .accessibilityLabel,
-  ).toContain('Unknown');
-  expect(
-    rows().find(n => n.props.testID === 'range-nutrient-protein')?.props
-      .accessibilityLabel,
-  ).toContain('0 g');
+  expect(rows().find(n => n.props.testID === 'range-nutrient-vitaminD')?.props.accessibilityLabel).toContain('Unknown');
+  expect(rows().find(n => n.props.testID === 'range-nutrient-protein')?.props.accessibilityLabel).toContain('0 g');
   await act(async () => tree.root.findByType(Button).props.onPress());
   expect(rows()).toHaveLength(4);
   await act(async () => tree.unmount());
@@ -107,13 +89,25 @@ it('expands to every nutrient, switches totals to logged-day averages, and colla
 it('renders no nutrient amounts when numbers are hidden', async () => {
   let tree!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    tree = TestRenderer.create(
-      <RangeIntakeCard
-        report={{ ...report, display: { numbersHidden: true } }}
-        nutrients={meta.nutrients}
-      />,
-    );
+    tree = TestRenderer.create(<RangeIntakeCard report={{ ...report, display: { numbersHidden: true } }} nutrients={meta.nutrients} />);
   });
   expect(tree.toJSON()).toBeNull();
+  await act(async () => tree.unmount());
+});
+
+
+it('applies custom dates only after validating the inclusive range', async () => {
+  const onCustom = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<ThemeProvider><PeriodPicker period="custom" onPeriod={jest.fn()} anchor="2024-03-09" onAnchor={jest.fn()} custom={{ from: '2024-03-01', to: '2024-03-09' }} onCustom={onCustom} today="2024-03-20" /></ThemeProvider>); });
+  const pressId = async (id: string) => act(async () => { tree.root.findAll(n => n.props.testID === id && n.props.onPress)[0]!.props.onPress(); });
+  await pressId('report-custom-from');
+  await act(async () => tree.root.findByType(DateTimePicker).props.onChange({ type: 'set' }, new Date(2024, 2, 10, 12)));
+  await pressId('report-custom-apply');
+  expect(onCustom).not.toHaveBeenCalled();
+  await pressId('report-custom-to');
+  await act(async () => tree.root.findByType(DateTimePicker).props.onChange({ type: 'set' }, new Date(2024, 2, 11, 12)));
+  await pressId('report-custom-apply');
+  expect(onCustom).toHaveBeenCalledWith({ from: '2024-03-10', to: '2024-03-11' });
   await act(async () => tree.unmount());
 });

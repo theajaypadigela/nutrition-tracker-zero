@@ -7,6 +7,7 @@ import reportFixture from '../fixtures/vapi/end-of-call-report.json';
 import noListFixture from '../fixtures/vapi/end-of-call-report.no-list.json';
 import { api, createProfile, fillFixture, postWebhook, webhookToken } from '../helpers';
 import { localDateIn } from '../../src/domain/time';
+import { withDayCompletion } from '../features';
 
 const KEY = 'pk-LEAKCHECK-5f0c2e7a-91b3';
 
@@ -97,7 +98,7 @@ describe('webhook replay scenarios', () => {
     expect(call).toMatchObject({ id: start.callId, status: 'tool_saved', endedReason: 'assistant-ended-call', durationSeconds: 150 });
   });
 
-  it('marks completion through the Vapi webhook only after a yes, without disturbing saved foods', async () => {
+  it('marks completion through the Vapi webhook only after a yes, without disturbing saved foods', withDayCompletion(async () => {
     const { userId, token } = await profileWithKey();
     const start = await startCall(userId);
     const callId = vapiId();
@@ -113,6 +114,25 @@ describe('webhook replay scenarios', () => {
     await api('PUT', `/days/${start.localDate}/status`, { userId, body: { status: 'partial' } });
     await postWebhook(token, mark(true));
     expect((await api('GET', `/days/${start.localDate}`, { userId })).body.status).toBe('partial');
+  }));
+
+  it('answers schedule_callback over the webhook with the time to say back, and does not mark a day while the feature is off', async () => {
+    const { userId, token } = await profileWithKey();
+    const start = await startCall(userId);
+    const callId = vapiId();
+    await api('POST', `/calls/${start.callId}/started`, { userId, body: { vapiCallId: callId } });
+    const tool = (name: string, id: string, args: unknown) => postWebhook(token, JSON.stringify({ message: { type: 'tool-calls', call: { id: callId }, toolCallList: [{ id, function: { name, arguments: args } }] } }));
+    const ok = (await tool('schedule_callback', 'cb1', { minutes: 20 })).body.results[0];
+    expect(ok).toMatchObject({ name: 'schedule_callback', toolCallId: 'cb1' });
+    expect(ok.result).toMatch(/call them again in 20 minutes, at \d{1,2}:\d{2} (am|pm)/);
+    // arguments arrive as a JSON string from some providers
+    expect((await tool('schedule_callback', 'cb2', JSON.stringify({ minutes: 60 }))).body.results[0].result).toContain('1 hour');
+    expect((await tool('schedule_callback', 'cb3', { minutes: 5000 })).body.results[0].error).toContain('within 12 hours');
+    expect((await tool('schedule_callback', 'cb4', {})).body.results[0].error).toContain('how many minutes');
+    // the call is not affected: nothing saved, nothing marked
+    expect((await tool('mark_day_complete', 'mark', { confirmed: true })).body.results[0].error).toContain('not available');
+    expect((await api('GET', `/days/${start.localDate}`, { userId })).body.status).toBeNull();
+    expect(await callItems(userId)).toHaveLength(0);
   });
 
   it('a call that ends without save_foods becomes no_list with its transcript', async () => {

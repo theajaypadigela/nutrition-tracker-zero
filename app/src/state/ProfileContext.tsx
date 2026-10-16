@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { ACCOUNT_ACCESS_UPDATE_REQUIRED, ApiError, isAccountCredential, setApiSecret, setApiUser } from '@/api/client';
 import type { Profile } from '@/api/types';
 import { loadProfileSecret, saveProfileSecret } from '@/services/secret';
-import { loadProfile, saveProfile } from './profileStore';
+import { loadOnboardingPending, loadProfile, saveOnboardingPending, saveProfile } from './profileStore';
 
 interface ProfileState {
   ready: boolean;
@@ -14,7 +14,7 @@ interface ProfileState {
   /** A new profile has just finished setting up its call: offer to make the targets personal, once. */
   healthIntroPending: boolean;
   selectProfile: (p: Profile | null, opts?: { isNew?: boolean; secret?: string }) => Promise<void>;
-  finishOnboarding: () => void;
+  finishOnboarding: () => Promise<void>;
   consumeHealthIntro: () => void;
 }
 
@@ -32,11 +32,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const p = await loadProfile();
       const stored = p ? await loadProfileSecret(p.id) : null;
+      const pending = p ? await loadOnboardingPending(p.id) : false;
       if (!active) return;
       setApiUser(p?.id ?? null);
       setApiSecret(stored);
       setSecret(stored);
       setProfile(p);
+      setOnboarding(pending);
+      setHealthIntroPending(pending);
       setReady(true);
     })();
     return () => { active = false; };
@@ -55,16 +58,21 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     } else if (p) {
       next = await loadProfileSecret(p.id);
     }
+    const pending = !!p && (!!opts.isNew || await loadOnboardingPending(p.id));
+    if (p && opts.isNew) await saveOnboardingPending(p.id, true);
     await saveProfile(p);
     setApiUser(p?.id ?? null);
     setApiSecret(next);
     setSecret(next);
-    setOnboarding(!!p && !!opts.isNew);
-    setHealthIntroPending(!!p && !!opts.isNew);
+    setOnboarding(pending);
+    setHealthIntroPending(pending);
     setProfile(p);
   }, []);
 
-  const finishOnboarding = useCallback(() => setOnboarding(false), []);
+  const finishOnboarding = useCallback(async () => {
+    if (profile) await saveOnboardingPending(profile.id, false);
+    setOnboarding(false);
+  }, [profile]);
   const consumeHealthIntro = useCallback(() => setHealthIntroPending(false), []);
 
   const value = useMemo(

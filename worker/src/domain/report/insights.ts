@@ -101,7 +101,7 @@ export function buildInsights(ctx: InsightContext): Insight[] {
   if (ctx.assessedDays < cfg.minDaysForSummary) {
     add({ id: 'few_days', priority: 2, params: { n: ctx.assessedDays }, gap: cfg.minDaysForSummary - ctx.assessedDays });
   }
-  const partial = ctx.days.filter((d) => d.state === 'partial');
+  const partial = cfg.dayCompletionPrompts ? ctx.days.filter((d) => d.state === 'partial') : [];
   if (partial.length > 0) {
     const worst = partial.reduce((a, b) => ((a.kcal ?? 0) <= (b.kcal ?? 0) ? a : b));
     add({ id: 'incomplete_days', priority: 2, params: { date: worst.date, kcal: round(worst.kcal ?? 0), n: partial.length }, gap: partial.length });

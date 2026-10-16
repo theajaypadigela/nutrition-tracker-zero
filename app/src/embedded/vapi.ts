@@ -7,6 +7,8 @@
 
 export const SAVE_FOODS = 'save_foods';
 export const MARK_DAY_COMPLETE = 'mark_day_complete';
+/** "Call me again in 20 minutes": only the phone can arm it, so the app reads it from the call's messages in every mode (providers/vapi.ts). */
+export const SCHEDULE_CALLBACK = 'schedule_callback';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -22,13 +24,13 @@ export interface SaveFoodsCall {
  * `conversation-update` carries the same call, so it is read too, in case Vapi's client message is ever missing: the bridge
  * remembers what it has handled, so seeing a call twice never saves twice.
  */
-export function voiceToolCallsOf(msg: unknown): (SaveFoodsCall & { name: string })[] {
+export function voiceToolCallsOf(msg: unknown, names: readonly string[] = [SAVE_FOODS, MARK_DAY_COMPLETE]): (SaveFoodsCall & { name: string })[] {
   if (!isObj(msg)) return [];
   const out: (SaveFoodsCall & { name: string })[] = [];
   const take = (tc: unknown) => {
     if (!isObj(tc)) return;
     const fn = isObj(tc.function) ? tc.function : tc;
-    if (fn.name !== SAVE_FOODS && fn.name !== MARK_DAY_COMPLETE) return;
+    if (typeof fn.name !== 'string' || !names.includes(fn.name)) return;
     out.push({ name: fn.name, id: typeof tc.id === 'string' && tc.id ? tc.id : null, arguments: fn.arguments ?? fn.parameters });
   };
   if (msg.type === 'tool-calls') {

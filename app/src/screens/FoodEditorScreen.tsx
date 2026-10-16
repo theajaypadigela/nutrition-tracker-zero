@@ -102,6 +102,8 @@ export default function FoodEditorScreen() {
 
   const load = async () => {
     if (!params.foodId) return;
+    setLoading(true);
+    setError(null);
     try {
       const f = await api.getFood(params.foodId);
       setFood(f);
@@ -188,6 +190,7 @@ export default function FoodEditorScreen() {
   };
 
   const save = async () => {
+    if (editing && !food) return;
     // An empty field is 0, for every nutrient, calories too: only what was typed has to be a number.
     const built = buildNutrients(values, meta.nutrients);
     const { blanks } = built;
@@ -380,7 +383,7 @@ export default function FoodEditorScreen() {
             size="lg"
             fullWidth
             loading={saving || checking}
-            disabled={loading || blocked}
+            disabled={loading || blocked || (editing && !food)}
             onPress={save}
           />
         </>
@@ -389,6 +392,10 @@ export default function FoodEditorScreen() {
     >
       {loading ? (
         <LoadingState />
+      ) : editing && !food ? (
+        <Notice tone="danger" action={{ label: 'Retry', onPress: load }}>
+          {error ?? 'Could not load this food.'}
+        </Notice>
       ) : (
         <>
           {!editing ? <Notice tone="info">{where.editorNotice}</Notice> : null}

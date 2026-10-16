@@ -26,6 +26,7 @@ import type {
   Item,
   ItemInput,
   Meta,
+  NutrientBreakdown,
   Profile,
   Settings,
   StartCallResponse,
@@ -214,6 +215,9 @@ export const api = {
   clearDayStatus: (date: string) => request<void>('DELETE', `/days/${date}/status`),
   /** The whole weekly view for the week containing `start` (a Monday is snapped to), with up to eight weeks of history. */
   getRangeReport: (from: string, to: string) => request<RangeReport>('GET', `/reports/range?from=${enc(from)}&to=${enc(to)}`),
+  /** The logged items that add up to one nutrient's total over a span of days, each with what it contributed (the figure's own arithmetic). */
+  getNutrientBreakdown: (from: string, to: string, nutrient: string) =>
+    request<NutrientBreakdown>('GET', `/reports/breakdown?from=${enc(from)}&to=${enc(to)}&nutrient=${enc(nutrient)}`),
   getWeeklyReport: (start?: string, weeks?: number) => {
     const q = [start ? `start=${start}` : '', weeks ? `weeks=${weeks}` : ''].filter(Boolean).join('&');
     return request<WeeklyReport>('GET', `/reports/weekly${q ? `?${q}` : ''}`);

@@ -14,6 +14,7 @@ import FoodsScreen from '@/screens/FoodsScreen';
 import ReportScreen from '@/screens/ReportScreen';
 import WeeklySummaryScreen from '@/screens/WeeklySummaryScreen';
 import NutrientScreen from '@/screens/NutrientScreen';
+import NutrientBreakdownScreen from '@/screens/NutrientBreakdownScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import VoiceCallScreen from '@/screens/VoiceCallScreen';
 import AddItemsScreen from '@/screens/AddItemsScreen';
@@ -95,6 +96,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="WeeklySummary" component={WeeklySummaryScreen} />
           <Stack.Screen name="Nutrient" component={NutrientScreen} />
+          <Stack.Screen name="NutrientBreakdown" component={NutrientBreakdownScreen} />
           <Stack.Screen name="Targets" component={TargetsScreen} />
           <Stack.Screen name="Reauthenticate" component={ReauthenticateScreen} />
           <Stack.Screen name="HealthIntro" component={HealthIntroScreen} />

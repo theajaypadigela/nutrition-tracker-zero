@@ -29,6 +29,11 @@ export type RootStackParamList = {
   WeeklySummary: { start?: string } | undefined;
   /** One nutrient over its window; `window` is `four_weeks` for a vitamin judged over four weeks. */
   Nutrient: { key: string; start: string; window?: 'week' | 'four_weeks' };
+  /**
+   * The logged items that add up to one nutrient's total, from `from` to `to` (YYYY-MM-DD; one day is the same date twice). `origin` is the
+   * dashboard it was opened from, so the total reads the way that dashboard writes it.
+   */
+  NutrientBreakdown: { nutrient: string; from: string; to: string; origin?: 'today' | 'report' };
   // ---- personal targets (WEEKLY_BREAKDOWN_PLAN.md 3.5, 9.4)
   Reauthenticate: undefined;
   HealthIntro: undefined;

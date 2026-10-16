@@ -1,3 +1,5 @@
+import { CALLBACK_FUNCTION } from '../domain/callback';
+import { FEATURES } from '../domain/features';
 import { LOGGED_UNITS, MEALS } from '../domain/units';
 import { weekdayOf } from '../domain/time';
 import { planMeals } from './meals';
@@ -15,6 +17,7 @@ export const ASSISTANT_DEFAULTS = {
 
 export const SAVE_FOODS = 'save_foods';
 export const MARK_DAY_COMPLETE = 'mark_day_complete';
+export { CALLBACK_TOOL as SCHEDULE_CALLBACK } from '../domain/callback';
 const WEBHOOK_TIMEOUT_SECONDS = 20;
 
 export interface AssistantInput {
@@ -87,6 +90,20 @@ export function markDayCompleteTool(webhookUrl: string | null) {
   };
 }
 
+/**
+ * "Call me again in 20 minutes" (domain/callback.ts). Hosted, the Worker answers it over the webhook like the other tools; inside the
+ * app it is a client-side tool with no reply. Either way the phone arms the reminder: the app watches the call's messages for it
+ * (src/services/voice/providers/vapi.ts), because only the phone can ring itself.
+ */
+export function scheduleCallbackTool(webhookUrl: string | null) {
+  return {
+    type: 'function',
+    async: webhookUrl === null,
+    function: { ...CALLBACK_FUNCTION },
+    ...(webhookUrl === null ? {} : { server: { url: webhookUrl, timeoutSeconds: WEBHOOK_TIMEOUT_SECONDS } }),
+  };
+}
+
 /** Inline (transient) assistant for `vapi.start(assistant)` (PLAN.md §9.2). */
 export function buildAssistant(input: AssistantInput) {
   const plan = planMeals(input.localTime, input.alreadyLogged.map((i) => i.meal));
@@ -107,7 +124,13 @@ export function buildAssistant(input: AssistantInput) {
     model: {
       ...ASSISTANT_DEFAULTS.model,
       messages: [{ role: 'system', content: systemPrompt }],
-      tools: [saveFoodsTool(input.webhookUrl), markDayCompleteTool(input.webhookUrl), { type: 'endCall' }],
+      // mark_day_complete is off while a person cannot mark a day (domain/features.ts).
+      tools: [
+        saveFoodsTool(input.webhookUrl),
+        ...(FEATURES.dayCompletion ? [markDayCompleteTool(input.webhookUrl)] : []),
+        scheduleCallbackTool(input.webhookUrl),
+        { type: 'endCall' },
+      ],
     },
     voice: { ...ASSISTANT_DEFAULTS.voice },
     transcriber: { ...ASSISTANT_DEFAULTS.transcriber },

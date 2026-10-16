@@ -10,6 +10,7 @@ import { size, space } from '@/theme';
 import { capitalize, formatNumber } from '@/utils/format';
 import { strings, where } from '@/i18n/strings';
 import { weightText } from './MealSection';
+import { readNumber } from '@/utils/foodData';
 
 interface FoodErrors {
   foodName: string;
@@ -73,7 +74,7 @@ export function EditItemSheet({
     if (!quantity.trim()) {
       next.quantity = 'Required';
       valid = false;
-    } else if (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0) {
+    } else if (readNumber(quantity) === null || readNumber(quantity)! <= 0) {
       next.quantity = 'Must be above 0';
       valid = false;
     }
@@ -96,7 +97,7 @@ export function EditItemSheet({
     try {
       await api.updateItem(item.id, {
         name: foodName.trim(),
-        quantity: Number(quantity),
+        quantity: readNumber(quantity)!,
         unit: servingSize.trim(),
         meal,
       });

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssistant } from '../../src/vapi/assistant';
 import { planMeals } from '../../src/vapi/meals';
-import { buildFirstMessage, formatClock } from '../../src/vapi/prompt';
+import { buildFirstMessage, buildSystemPrompt, formatClock } from '../../src/vapi/prompt';
 import { localTimeIn } from '../../src/domain/time';
 import { endOfCallReportOf, isStartFailure, metadataOf, parseArguments, toolCallsOf } from '../../src/vapi/parse';
 import { LOGGED_UNITS } from '../../src/domain/units';
+import { withDayCompletion } from '../features';
 
 describe('buildAssistant on the phone (webhookUrl null)', () => {
   const a = buildAssistant({
@@ -88,12 +89,70 @@ describe('buildAssistant', () => {
     expect(prompt).toContain('wish them a nice dinner');
   });
   it('has endCall, no recording, metadata, 10 min cap', () => {
-    expect(a.model.tools[1]).toMatchObject({ function: { name: 'mark_day_complete', parameters: { required: ['confirmed'] } } });
+    // Marking a day complete is off for now (domain/features.ts): no tool and no question; the call can be asked to call back.
+    expect(a.model.tools.map((t) => ('function' in t ? t.function.name : t.type))).toEqual(['save_foods', 'schedule_callback', 'endCall']);
+    expect(a.model.tools[1]).toMatchObject({ function: { name: 'schedule_callback', parameters: { required: ['minutes'] } } });
     expect(a.model.tools[2]).toEqual({ type: 'endCall' });
-    expect(a.model.messages[0]!.content).toContain('Should I mark this day as complete?');
+    expect(a.model.messages[0]!.content).not.toContain('Should I mark this day as complete?');
+    expect(a.model.messages[0]!.content).toContain('schedule_callback');
     expect(a.artifactPlan.recordingEnabled).toBe(false);
     expect(a.metadata).toEqual({ userId: 'u1', localDate: '2026-10-04', callRowId: 7 });
     expect(a.maxDurationSeconds).toBe(600);
+  });
+});
+
+describe('buildAssistant with day marking switched back on', () => {
+  it('offers mark_day_complete and asks the question again, so the way back works', withDayCompletion(() => {
+    const on = buildAssistant({ userId: 'u1', name: 'Asha Rao', localDate: '2026-10-04', localTime: '13:00', callRowId: 7, webhookUrl: 'https://w.example/vapi/webhook/tok', alreadyLogged: [] });
+    expect(on.model.tools.map((t) => ('function' in t ? t.function.name : t.type))).toEqual(['save_foods', 'mark_day_complete', 'schedule_callback', 'endCall']);
+    expect(on.model.messages[0]!.content).toContain('Should I mark this day as complete?');
+  }));
+});
+
+describe('the call-back rule and the closing steps of the prompt', () => {
+  const base = { name: 'Asha Rao', weekday: 'Sunday', localDate: '2026-10-04', localTime: '20:50', alreadyLogged: 'nothing yet', units: LOGGED_UNITS, plan: planMeals('20:50', []) };
+
+  it('teaches the model to turn what was said into minutes and to call schedule_callback only for a time', () => {
+    const prompt = buildSystemPrompt({ ...base, dayCompletion: false });
+    expect(prompt).toContain('call me again in 20 minutes');
+    expect(prompt).toContain('remind me after 30 minutes');
+    expect(prompt).toContain("I'll eat later, call me back");
+    expect(prompt).toContain('half an hour is 30, an hour is 60');
+    expect(prompt).toContain('When should I call you back?');
+    expect(prompt).toContain('(it is 8:50 pm now)');
+    expect(prompt).toContain('First call save_foods for anything they already confirmed, then call schedule_callback');
+    expect(prompt).toContain('Never say a call is scheduled unless schedule_callback has been called');
+  });
+
+  it('numbers the steps without a gap in either mode', () => {
+    const numbered = (prompt: string) => [...prompt.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+    expect(numbered(buildSystemPrompt({ ...base, dayCompletion: false }))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(numbered(buildSystemPrompt({ ...base, dayCompletion: true }))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(numbered(buildSystemPrompt({ ...base, dayCompletion: false, callback: false }))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('says goodbye straight after the saves while day marking is off, and never mentions completion', () => {
+    const prompt = buildSystemPrompt({ ...base, dayCompletion: false });
+    expect(prompt).toContain('say a short goodbye and end the call');
+    expect(prompt).not.toMatch(/day-completion|mark_day_complete|mark this day|day complete|marking the day/i);
+  });
+
+  it('asks the completion question again when it is switched back on', () => {
+    const prompt = buildSystemPrompt({ ...base, dayCompletion: true });
+    expect(prompt).toContain('Should I mark this day as complete?');
+    expect(prompt).toContain('Then ask the day-completion question below.');
+    expect(prompt).toContain('end the call without marking the day complete');
+  });
+
+  it('tells an on-device call not to wait for a reply from the tool, and a hosted one to wait', () => {
+    expect(buildSystemPrompt({ ...base, dayCompletion: false, onDevice: true })).toContain('sets the reminder quietly on their phone and sends no reply');
+    expect(buildSystemPrompt({ ...base, dayCompletion: false })).toContain('Wait for its result.');
+  });
+
+  it('with nothing more to ask, says goodbye rather than asking about completion', () => {
+    const logged = planMeals('09:00', ['breakfast']); // nothing left to ask about yet
+    expect(buildSystemPrompt({ ...base, plan: logged, dayCompletion: false })).toContain("if not, say a short goodbye and end the call");
+    expect(buildSystemPrompt({ ...base, plan: logged, dayCompletion: true })).toContain('go to the day-completion question');
   });
 });
 

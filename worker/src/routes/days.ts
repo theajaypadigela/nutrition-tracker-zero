@@ -1,4 +1,4 @@
-import { badRequest, json, noContent, notFound, nowIso, readJson } from '../http';
+import { badRequest, conflict, json, noContent, notFound, nowIso, readJson } from '../http';
 import {
   callJson,
   indexFromResults,
@@ -12,6 +12,7 @@ import {
 } from '../db/queries';
 import { parseItemList, prepareItems } from '../domain/items';
 import { itemNutrients, sumNutrients } from '../domain/intake/items';
+import { FEATURES } from '../domain/features';
 import { classifyDay } from '../domain/quality/days';
 import { dayTargetsOn } from '../domain/report/weekly';
 import { addDays, daysBetween, isValidDate, localDateIn } from '../domain/time';
@@ -21,7 +22,10 @@ import { goalStateFromResults, goalStatements, goalsView, modeOf, overridesOf } 
 
 const MAX_RANGE_DAYS = 62;
 
-/** What a person can say about a day (plan 7.2): it is complete, it looks incomplete, or leave it out of the reports. */
+/**
+ * What a person can say about a day (plan 7.2): it is complete, it looks incomplete, or leave it out of the reports. Off for now
+ * (FEATURES.dayCompletion): the routes below refuse, and what is stored is neither shown nor counted. Nothing is deleted.
+ */
 const DAY_STATUSES = ['complete', 'partial', 'skip'] as const;
 type DayStatus = (typeof DAY_STATUSES)[number];
 
@@ -34,6 +38,11 @@ const typedKeys = (view: ReturnType<typeof goalsView>) =>
 function parseDate(value: string | null | undefined, field = 'date'): string {
   if (!value || !isValidDate(value)) throw badRequest(`${field} must be YYYY-MM-DD`);
   return value;
+}
+
+/** The mark routes are closed while FEATURES.dayCompletion is off: nothing is written, whatever an older app sends. */
+function assertDayMarkingOn() {
+  if (!FEATURES.dayCompletion) throw conflict('day_marking_off', 'Marking a day complete or incomplete is turned off for now.');
 }
 
 export function registerDays(router: Router) {
@@ -54,7 +63,8 @@ export function registerDays(router: Router) {
     const index = indexFromResults(results.slice(1, 4));
     const rows = (results[4] as D1Result<LogItemRow>).results;
     const calls = (results[5] as D1Result<CallRow>).results;
-    const mark = (results[6] as D1Result<{ status: DayStatus }>).results[0]?.status ?? null;
+    // A stored mark is kept but not read while day marking is off, so the day is judged as if nobody had said anything.
+    const mark = FEATURES.dayCompletion ? ((results[6] as D1Result<{ status: DayStatus }>).results[0]?.status ?? null) : null;
     const state = goalStateFromResults(results.slice(7), unlocked);
     const today = localDateIn(user!.timezone);
     const view = goalsView({ state, today, unlocked });
@@ -103,7 +113,9 @@ export function registerDays(router: Router) {
     ]);
     const index = indexFromResults(results.slice(0, 3));
     const rows = (results[3] as D1Result<Pick<LogItemRow, 'local_date' | 'food_id' | 'quantity' | 'unit' | 'status'>>).results;
-    const marks = new Map((results[4] as D1Result<{ local_date: string; status: DayStatus }>).results.map((m) => [m.local_date, m.status]));
+    const marks = new Map(
+      FEATURES.dayCompletion ? (results[4] as D1Result<{ local_date: string; status: DayStatus }>).results.map((m) => [m.local_date, m.status]) : [],
+    );
     const view = goalsView({ state: goalStateFromResults(results.slice(5), unlocked), today: localDateIn(user!.timezone), unlocked });
 
     const byDate = new Map<string, typeof rows>();
@@ -129,6 +141,7 @@ export function registerDays(router: Router) {
   // "This day is complete / looks incomplete / leave it out of my reports" (illness, travel, fasting, a festival): plan 7.2, 9.3.
   // Only today or a day gone by can be marked, and the mark says nothing about why.
   router.add('PUT', '/days/:date/status', 'user', async ({ req, env, params, user }: Ctx) => {
+    assertDayMarkingOn();
     const date = parseDate(params.date);
     if (date > localDateIn(user!.timezone)) throw badRequest('Only today or a day gone by can be marked');
     const status = asObject(await readJson(req)).status;
@@ -146,6 +159,7 @@ export function registerDays(router: Router) {
   });
 
   router.add('DELETE', '/days/:date/status', 'user', async ({ env, params, user }: Ctx) => {
+    assertDayMarkingOn();
     const date = parseDate(params.date);
     await env.DB.prepare('DELETE FROM day_status WHERE user_id = ?1 AND local_date = ?2').bind(user!.id, date).run();
     return noContent();

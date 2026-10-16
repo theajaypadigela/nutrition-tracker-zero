@@ -89,6 +89,7 @@ Errors look like `{"error": {"code", "message"}}`.
 | ‡ `GET /me/targets?date=` | The target set in force that day, each target with its reason, source and evidence tag |
 | ‡ `GET/POST /me/weights` · `DELETE /me/weights/:date` | Weigh-ins; a weight that moves the weight by 3% or 2 kg makes a new target set |
 | ‡ `GET /me/export` · `DELETE /me/health-data` · `DELETE /me` | Everything stored about the health profile / erase exactly that / delete the whole profile |
+| ‡ `GET /reports/range?from&to` | Inclusive nutrient totals and averages per logged day for any date range; includes all stored nutrients, excludes skipped days, respects hidden-number settings |
 | ‡ `GET /reports/weekly?start&weeks` | The weekly view: coverage, insights, energy, nutrients, the Nutrient mix, the weight line, eight weeks of history |
 | † `POST /calls/start {kind}` | Records the call; returns `{callId, publicKey, assistant}` (the only response carrying the key) |
 | † `POST /calls/:id/started` · `POST /calls/:id/failed` | Link the Vapi call id / record a client-side failure |
@@ -490,3 +491,6 @@ first. Re-running the import is safe.
 - **Device alarms are the weak point** (Doze, OEM battery killers). The Reminder health screen shows what to fix.
 - **One deviation from PLAN.md §7:** the singularizer strips a trailing "s" after "is" too, so
   idlis→idli and chapatis→chapati work as the plan's examples require.
+
+
+The Reports tab supports daily, weekly, monthly, yearly, and custom date ranges. Calendar periods in progress include logs through today. Nutrient intake starts with calories and macronutrients; **View all nutrients** expands vitamins, minerals, fiber, sugars, sodium, and saturated fat. Switch between totals and averages per logged day. Partial logs count toward recorded intake, skipped days are excluded, and missing values appear as unknown or lower bounds rather than zero. Weekly target assessments remain available below the intake summary.

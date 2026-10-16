@@ -14,6 +14,7 @@ jest.mock('@/state/HealthContext', () => ({ useHealth: jest.fn() }));
 jest.mock('@/state/MetaContext', () => ({ useMeta: jest.fn() }));
 jest.mock('@/state/ProfileContext', () => ({ useProfile: () => ({ profile: { id: 'u', name: 'Zoe' } }) }));
 jest.mock('@/state/pendingStore', () => ({ setPendingTotal: jest.fn() }));
+jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-11' }));
 jest.mock('@/api/client', () => {
   const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
   return { errorMessage, api: { uncached: jest.fn(), getFoodGaps: jest.fn(), addAlias: jest.fn() } };

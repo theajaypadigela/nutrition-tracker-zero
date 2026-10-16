@@ -5,12 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { Button, Card, Chip, IconButton, Notice, Text } from '@/components/kit';
 import { strings } from '@/i18n/strings';
 import { space, useTheme } from '@/theme';
-import {
-  rangeLabel,
-  reportBounds,
-  shiftReport,
-  type ReportPeriod,
-} from '@/utils/reportRange';
+import { rangeLabel, reportBounds, shiftReport, type ReportPeriod } from '@/utils/reportRange';
 
 const t = strings.report.periods;
 const periods: ReportPeriod[] = ['day', 'week', 'month', 'year', 'custom'];
@@ -117,13 +112,7 @@ export function PeriodPicker({
                     }
                   }}
                 />
-                {Platform.OS === 'ios' ? (
-                  <Button
-                    variant="ghost"
-                    label={t.done}
-                    onPress={() => setPicker(null)}
-                  />
-                ) : null}
+                {Platform.OS === 'ios' ? <Button variant="ghost" label={t.done} onPress={() => setPicker(null)} /> : null}
               </>
             ) : null}
             {invalid ? <Notice tone="danger">{t.invalid}</Notice> : null}
@@ -131,11 +120,7 @@ export function PeriodPicker({
               label={t.apply}
               testID="report-custom-apply"
               onPress={() => {
-                if (
-                  draft.from > draft.to ||
-                  draft.from > today ||
-                  draft.to > today
-                ) {
+                if (draft.from > draft.to || draft.from > today || draft.to > today) {
                   setInvalid(true);
                   return;
                 }

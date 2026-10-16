@@ -61,6 +61,8 @@ export async function scheduleNativeCall(options: {
   repeatDaily: boolean;
   callTime?: string;
   timezone?: string;
+  /** The words of the iOS reminder notification, when they are not the daily ones (a call back). Android draws its own ring screen. */
+  notification?: { title: string; body: string };
 }): Promise<number> {
   if (!nativeModule?.scheduleIncomingCall) {
     throw new Error('Install the updated Android/iOS build to enable reminders while the app is closed.');

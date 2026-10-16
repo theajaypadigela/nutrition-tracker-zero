@@ -3,6 +3,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import worker from '../../src/index';
 import { deepgramProvider } from '../../src/voice/providers/deepgram';
 import { api, APP_TOKEN, BASE, createProfile } from '../helpers';
+import { withDayCompletion } from '../features';
 
 afterEach(() => vi.restoreAllMocks());
 const start = (userId: string) => api('POST', '/voice/calls/start', { userId, body: { kind: 'manual' } });
@@ -20,10 +21,40 @@ describe('provider-neutral voice lifecycle', () => {
     expect(session.body).toMatchObject({ provider: 'deepgram', lifecycle: 'client' });
     expect(session.body.providerCallId).toMatch(/^deepgram:/);
     expect(session.text).not.toContain('test-deepgram-key');
-    expect(session.body.config.settings.agent.think.functions.map((f: { name: string }) => f.name)).toEqual(['save_foods', 'mark_day_complete', 'end_call']);
+    // Marking a day complete is off for now (domain/features.ts): the call neither asks nor offers the tool. It can be asked to call back.
+    expect(session.body.config.settings.agent.think.functions.map((f: { name: string }) => f.name)).toEqual(['save_foods', 'schedule_callback', 'end_call']);
     expect(session.body.config.settings.agent.think.prompt).toContain('Is that right?');
-    expect(session.body.config.settings.agent.think.prompt).toContain('Should I mark this day as complete?');
+    expect(session.body.config.settings.agent.think.prompt).not.toContain('Should I mark this day as complete?');
+    expect(session.body.config.settings.agent.think.prompt).not.toContain('day-completion');
+    expect(session.body.config.settings.agent.think.prompt).toContain('schedule_callback');
     expect(session.body.config.settings.agent.think.prompt).toContain('never say it was saved before success');
+  });
+  it('asks the day-completion question and offers its tool again when the feature is switched back on', withDayCompletion(async () => {
+    const userId = await createProfile();
+    const session = await start(userId);
+    expect(session.body.config.settings.agent.think.functions.map((f: { name: string }) => f.name)).toEqual(['save_foods', 'mark_day_complete', 'schedule_callback', 'end_call']);
+    expect(session.body.config.settings.agent.think.prompt).toContain('Should I mark this day as complete?');
+    expect(session.body.config.settings.agent.think.prompt).toContain('the user has answered the day-completion question');
+  }));
+  it('does not mark a day while the feature is off, and says so to the model without writing anything', async () => {
+    const owner = await createProfile();
+    const { body: s } = await start(owner);
+    const marked = await api('POST', `/voice/calls/${s.callId}/tools`, { userId: owner, body: { id: 'mark', name: 'mark_day_complete', arguments: { confirmed: true } } });
+    expect(marked.status).toBe(200);
+    expect(marked.body.error).toContain('not available');
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM day_status WHERE user_id = ?').bind(owner).first<{ n: number }>())!.n).toBe(0);
+    expect((await api('GET', `/days/${s.localDate}`, { userId: owner })).body.status).toBeNull();
+  });
+  it('answers schedule_callback with the time to say back, checks the minutes, and stores nothing', async () => {
+    const owner = await createProfile();
+    const { body: s } = await start(owner);
+    const ask = (minutes: unknown) => api('POST', `/voice/calls/${s.callId}/tools`, { userId: owner, body: { id: `cb-${String(minutes)}`, name: 'schedule_callback', arguments: { minutes } } });
+    const ok = await ask(20);
+    expect(ok.status).toBe(200);
+    expect(ok.body.result).toMatch(/call them again in 20 minutes, at \d{1,2}:\d{2} (am|pm)/);
+    expect((await ask('90')).body.result).toContain('1 hour 30 minutes');
+    for (const bad of [0, -5, 721, 'soon', null]) expect((await ask(bad)).body.error).toBeTruthy();
+    expect((await env.DB.prepare("SELECT status FROM calls WHERE id = ?").bind(s.callId).first<{ status: string }>())!.status).not.toBe('tool_saved');
   });
   it('saves, deduplicates, corrects and settles confirmed meals with the existing nutrition pipeline', async () => {
     const userId = await createProfile();
@@ -43,7 +74,7 @@ describe('provider-neutral voice lifecycle', () => {
     const again = await api('POST', `/voice/calls/${s.callId}/ended`, { userId, body: { reason: 'pipeline-error' } });
     expect(again.body.call.endedReason).toBe('assistant-ended-call');
   });
-  it('marks the call date only with explicit confirmation and keeps manual changes on redelivery', async () => {
+  it('marks the call date only with explicit confirmation and keeps manual changes on redelivery', withDayCompletion(async () => {
     const owner = await createProfile(), other = await createProfile();
     const { body: s } = await start(owner);
     const mark = (userId: string, id: string, confirmed: unknown) => api('POST', `/voice/calls/${s.callId}/tools`,
@@ -64,7 +95,7 @@ describe('provider-neutral voice lifecycle', () => {
     expect((await api('GET', '/days/2026-10-01', { userId: owner })).body.status).toBe('partial');
     await api('POST', `/voice/calls/${s.callId}/ended`, { userId: owner, body: { reason: 'assistant-ended-call' } });
     expect((await mark(owner, 'late', true)).status).toBe(409);
-  });
+  }));
   it('rejects cross-profile operations and malformed calls without losing the conversation', async () => {
     const owner = await createProfile(), other = await createProfile();
     const { body: s } = await start(owner);

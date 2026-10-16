@@ -968,3 +968,16 @@ describe('opened from the log screen', () => {
     expect(nav.goBack).not.toHaveBeenCalled();
   });
 });
+
+it('keeps a failed edit load from creating a new food and offers retry', async () => {
+  rn.useRoute.mockReturnValue({ params: { foodId: FOOD.id } });
+  api_.getFood.mockRejectedValueOnce(new Error('Could not load food'));
+  const tree = await render();
+  expect(all(tree)).toContain('Retry');
+  expect(pressable(tree, 'save-food')?.props.onPress).toBeUndefined();
+  expect(api_.createFood).not.toHaveBeenCalled();
+  const retry = tree.root.findAll(n => n.props.accessibilityRole === 'button' && typeof n.props.onPress === 'function' && n.findAll(c => (c.type as unknown) === 'Text').some(c => textOf(c) === 'Retry'))[0]!;
+  await act(async () => retry.props.onPress());
+  expect(all(tree)).toContain('Also called');
+  expect(api_.getFood).toHaveBeenCalledTimes(2);
+});
