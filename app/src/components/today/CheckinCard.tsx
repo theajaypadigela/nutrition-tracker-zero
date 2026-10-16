@@ -4,6 +4,7 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { ChevronRight, Clock, PhoneCall } from 'lucide-react-native';
 import type { Settings } from '@/api/types';
 import { Button, Card, Icon, Sheet, Text, Toggle } from '@/components/kit';
+import { strings } from '@/i18n/strings';
 import { requestCorePermissions } from '@/services/calls/permissions';
 import { createStyles, radius, space, useTheme } from '@/theme';
 import { formatClock } from '@/utils/dates';
@@ -233,8 +234,8 @@ export function CheckinCard({ callTime, callEnabled, timezone, onSave }: Checkin
         )}
         <Text variant="caption" tone="muted">
           {Platform.OS === 'ios'
-            ? `A sound reminder arrives in your profile's time zone (${timezone}). Tap it to start the call.`
-            : `Rings in your profile's time zone (${timezone}). If you miss it, it rings once more an hour later.`}
+            ? `A sound reminder arrives in your profile's time zone (${timezone}). Tap it to start the call. ${strings.callback.hint}`
+            : `Rings in your profile's time zone (${timezone}). If you miss it, it rings once more an hour later. ${strings.callback.hint}`}
         </Text>
       </Sheet>
     </>

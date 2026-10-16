@@ -257,9 +257,11 @@ export default function SettingsScreen() {
 
           <FormGroup
             title="Daily call"
-            hint={Platform.OS === 'ios'
-              ? 'A sound reminder arrives each day. Tap it to start your voice check-in. Focus and silent mode can silence it.'
-              : 'If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10 minutes.'}
+            hint={`${
+              Platform.OS === 'ios'
+                ? 'A sound reminder arrives each day. Tap it to start your voice check-in. Focus and silent mode can silence it.'
+                : 'If you miss the call it rings once more an hour later. "Snooze" on the missed-call notification re-rings in 10 minutes.'
+            } ${strings.callback.hint}`}
           >
             <ListGroup>
               <ListRow

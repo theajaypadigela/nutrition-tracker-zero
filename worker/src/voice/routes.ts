@@ -1,6 +1,6 @@
 import { badRequest, conflict, json, notFound, nowIso, readJson } from '../http';
 import { callJson, loadIndex, type CallRow } from '../db/queries';
-import { callbackReply, CALLBACK_TOOL, parseCallbackMinutes } from '../domain/callback';
+import { callbackReply, CALLBACK_TOOL, resolveCallback } from '../domain/callback';
 import { FEATURES } from '../domain/features';
 import { parseItemList, prepareItems } from '../domain/items';
 import { localDateIn, localTimeIn } from '../domain/time';
@@ -72,8 +72,8 @@ export function registerVoiceRoutes(router: Router): void {
     if (body.name === CALLBACK_TOOL) {
       // The app arms the reminder itself (only the phone can ring itself) and does not need this; a client that forwards the call gets the
       // same check and the same words, and nothing is stored.
-      const asked = parseCallbackMinutes(body.arguments);
-      return json('error' in asked ? { error: asked.error } : { result: callbackReply(asked.minutes, Date.now() + asked.minutes * 60_000, c.user!.timezone) });
+      const asked = resolveCallback(body.arguments, Date.now(), c.user!.timezone);
+      return json('error' in asked ? { error: asked.error } : { result: callbackReply(asked.minutes, asked.at, c.user!.timezone) });
     }
     if (body.name === 'mark_day_complete' && !FEATURES.dayCompletion) {
       return json({ error: 'Marking a day complete is not available. Say a short goodbye and end the call.' });

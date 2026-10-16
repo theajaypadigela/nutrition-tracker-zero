@@ -835,6 +835,17 @@ export const strings = {
     seeFoodsHint: 'Every item logged in this period, with what it contributed',
   },
 
+  /** "Call me again in 20 minutes" said during a call: the one call back that is waiting, and the note on the call screen after it was set. */
+  callback: {
+    title: 'Call back at {clock}',
+    subtitle: 'In {inWords}, as you asked.',
+    cancel: 'Cancel call back',
+    cancelFailed: 'Could not cancel the call back.',
+    doneTitle: "We'll call you again at {clock}",
+    doneBody: 'In {inWords}. It comes even if the app is closed.',
+    hint: 'During a call you can say "call me again in 20 minutes".',
+  },
+
   /** The Pending tab: what is waiting for food values, in two scopes. The words that depend on where the data lives are in `where`. */
   pending: {
     title: 'Pending',

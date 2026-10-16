@@ -28,8 +28,52 @@ class ScheduledCallInstrumentation : Instrumentation() {
       if (scenario == "cancel") {
         NativeCallScheduler.cancel(targetContext, "call-daily")
         NativeCallScheduler.cancel(targetContext, "call-test")
+        NativeCallScheduler.cancel(targetContext, "call-later")
         check(NativeCallScheduler.scheduleSnapshot(targetContext).length() == 0)
         finish(0, Bundle())
+        return
+      }
+      // "Call me again in 20 minutes": the call back the person asked for during a call. `later` is a food-logging call back (a meal payload),
+      // `later-habit` a habit reminder called back the same way, `later-replace` asks twice (the second replaces the first), `later-cancel`
+      // takes it back. Each rings ten seconds from now, with the app process dead, and is not repeated.
+      if (scenario.startsWith("later")) {
+        val habit = scenario == "later-habit"
+        fun callback(afterMs: Long, subtitle: String): Long {
+          val at = System.currentTimeMillis() + afterMs
+          val options = JSONObject().apply {
+            put("id", "call-later")
+            put("repeatDaily", false)
+            put("fireAt", at)
+            put("payload", JSONObject().apply {
+              put("callKind", "retry")
+              put("reason", "callback")
+              put("notificationId", "call-later")
+              put("type", if (habit) "habit" else "meal")
+              put("kind", if (habit) "habit-call" else "meal-call")
+              put("callId", "call-later")
+              put("assistantName", "Food check-in test")
+              put("subtitle", subtitle)
+              if (habit) put("habitName", "Evening walk")
+            })
+          }
+          return NativeCallScheduler.schedule(targetContext, options.toString())
+        }
+        if (scenario == "later-cancel") {
+          callback(60_000, "Calling back as you asked")
+          NativeCallScheduler.cancel(targetContext, "call-later")
+          check(NativeCallScheduler.scheduleSnapshot(targetContext).length() == 0) { "A cancelled call back is still saved" }
+          finish(0, Bundle().apply { putString("scenario", scenario) })
+          return
+        }
+        var fireAt = callback(if (scenario == "later-replace") 120_000 else 10_000, "Calling back as you asked")
+        if (scenario == "later-replace") {
+          fireAt = callback(10_000, "Calling back as you asked")
+          val saved = NativeCallScheduler.scheduleSnapshot(targetContext)
+          check(saved.length() == 1 && saved.getJSONObject(0).getLong("fireAt") == fireAt) { "The second ask did not replace the first" }
+        }
+        val saved = NativeCallScheduler.scheduleSnapshot(targetContext)
+        check(saved.length() == 1 && saved.getJSONObject(0).getString("id") == "call-later" && !saved.getJSONObject(0).getBoolean("repeatDaily"))
+        finish(0, Bundle().apply { putLong("scheduledAt", fireAt); putString("scenario", scenario) })
         return
       }
       val repeating = scenario == "daily" || scenario == "race"

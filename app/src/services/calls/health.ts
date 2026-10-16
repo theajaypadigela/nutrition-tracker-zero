@@ -1,5 +1,7 @@
 /** Reminder health (ported diagnostics): what could stop the daily call from ringing. */
 import { Platform } from 'react-native';
+import { describeCallback } from './callback';
+import { loadPendingCallback } from './callbackStore';
 import { inspectCallChannel } from './channels';
 import { canUseFullScreenIntent, openFullScreenIntentSettings, openReminderAppSettings } from './native';
 import { loadCachedSchedule } from './scheduleStore';
@@ -36,6 +38,20 @@ export async function buildHealthReport(): Promise<HealthItem[]> {
       fix: snap.notificationsAuthorized ? undefined : { label: 'Open settings', run: openNotificationSettings },
     },
   ];
+  // The call the person asked for during a call: when it is due, and (Android, which can say) whether the OS still holds it.
+  const pending = await loadPendingCallback();
+  const zone = (await loadCachedSchedule())?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const callback = describeCallback(pending, zone);
+  if (pending && callback) {
+    const held = snap.native?.schedules.some(sch => sch.id === 'call-later' && sch.fireAt === pending.fireAt);
+    const lost = Platform.OS === 'android' && !!snap.native && !held;
+    items.push({
+      id: 'callback',
+      title: 'Call back you asked for',
+      status: lost ? 'warn' : 'ok',
+      detail: `${callback.clock.toUpperCase()} (in ${callback.inWords}).${lost ? ' The phone does not hold it right now; opening the app puts it back.' : ''}`,
+    });
+  }
   if (Platform.OS !== 'android') {
     items.push({
       id: 'delivery', title: 'Daily reminder', status: 'ok',

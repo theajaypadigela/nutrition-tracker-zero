@@ -10,6 +10,7 @@ jest.mock('@/services/voice/api', () => ({ voiceApi: { start: jest.fn(), started
   tool: jest.fn(async () => ({ result: 'Saved 1 items' })), ended: jest.fn(async () => ({})) } }));
 jest.mock('@/services/calls/native', () => ({ cancelAutoRetry: jest.fn(), consumePendingHangup: jest.fn(async () => false),
   dismissIncomingCall: jest.fn(), subscribeToNativeCallEvents: jest.fn(() => () => {}) }));
+jest.mock('@/services/calls/callback', () => ({ CALLBACK_TOOL: 'schedule_callback', scheduleCallback: jest.fn() }));
 const mockSessions: { callbacks: VoiceCallbacks; session: VoiceSession }[] = [];
 jest.mock('@/services/voice/registry', () => ({ createVoiceSession: jest.fn((start, callbacks: VoiceCallbacks) => {
   const session: VoiceSession = { start: jest.fn(async () => { await callbacks.onStarted(start.providerCallId ?? 'vapi1'); }),
@@ -22,6 +23,7 @@ import { voiceApi } from '@/services/voice/api';
 import { api } from '@/api/client';
 import { check } from 'react-native-permissions';
 import { cancelAutoRetry } from '@/services/calls/native';
+import { scheduleCallback } from '@/services/calls/callback';
 
 let hook: ReturnType<typeof useVoiceCall>;
 let tree: TestRenderer.ReactTestRenderer;
@@ -96,4 +98,68 @@ it('ignores stale callbacks after hang-up and releases the provider', async () =
 it('does not allocate a second session on rapid Start taps', async () => {
   await act(async () => { await Promise.all([hook.start('manual'), hook.start('manual')]); });
   expect(voiceApi.start).toHaveBeenCalledTimes(1); expect(mockSessions).toHaveLength(1);
+});
+
+describe('"call me again in 20 minutes"', () => {
+  const NOW = Date.parse('2026-10-17T10:50:00Z');
+  const ok = (minutes: number) => ({ ok: true, fireAt: NOW + minutes * 60_000, minutes, reply: `Done. I will call them again in ${minutes} minutes.` });
+  beforeEach(async () => {
+    (scheduleCallback as jest.Mock).mockReset();
+    await act(async () => { await hook.start('manual'); });
+  });
+
+  it('is answered on the phone: the reminder is set, the Worker is not asked, and the call screen learns when it rings', async () => {
+    (scheduleCallback as jest.Mock).mockResolvedValue(ok(20));
+    let answer: unknown;
+    await act(async () => { answer = await latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } }); });
+    expect(answer).toEqual({ result: 'Done. I will call them again in 20 minutes.' });
+    expect(scheduleCallback).toHaveBeenCalledWith({ minutes: 20 }, expect.objectContaining({ timeZone: expect.any(String) }));
+    expect(voiceApi.tool).not.toHaveBeenCalled();
+    expect(hook.callback).toEqual({ fireAt: NOW + 20 * 60_000, minutes: 20 });
+  });
+
+  it('sets one reminder when the model repeats the same call, and the last ask when it asks again', async () => {
+    (scheduleCallback as jest.Mock).mockResolvedValueOnce(ok(20)).mockResolvedValueOnce(ok(45));
+    await act(async () => {
+      await latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } });
+      await latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } });
+    });
+    expect(scheduleCallback).toHaveBeenCalledTimes(1);
+    await act(async () => { await latest().callbacks.onFunction({ id: 'cb2', name: 'schedule_callback', arguments: { minutes: 45 } }); });
+    expect(scheduleCallback).toHaveBeenCalledTimes(2);
+    expect(hook.callback).toMatchObject({ minutes: 45 });
+  });
+
+  it('tells the model why when it could not be set, and says nothing on the call screen', async () => {
+    (scheduleCallback as jest.Mock).mockResolvedValue({ ok: false, error: 'Notifications are turned off for this app, so I cannot call back.' });
+    let answer: unknown;
+    await act(async () => { answer = await latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } }); });
+    expect(answer).toEqual({ error: 'Notifications are turned off for this app, so I cannot call back.' });
+    expect(hook.callback).toBeNull();
+  });
+
+  it('waits for the meals the person confirmed to be saved first, then sets it, and the call ends only after both', async () => {
+    let save!: (result: unknown) => void;
+    (voiceApi.tool as jest.Mock).mockReturnValueOnce(new Promise(resolve => { save = resolve; }));
+    (scheduleCallback as jest.Mock).mockResolvedValue(ok(30));
+    const saving = latest().callbacks.onFunction({ id: 'f1', name: 'save_foods', arguments: { items: [] } });
+    const scheduling = latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 30 } });
+    const ending = latest().callbacks.onEnded('assistant-ended-call');
+    await act(async () => { await Promise.resolve(); });
+    expect(scheduleCallback).not.toHaveBeenCalled();
+    expect(voiceApi.ended).not.toHaveBeenCalled();
+    await act(async () => { save({ result: 'Saved 1 items' }); await saving; await scheduling; await ending; });
+    expect(scheduleCallback).toHaveBeenCalledTimes(1);
+    expect(voiceApi.ended).toHaveBeenCalled();
+    expect(hook.callback).toMatchObject({ minutes: 30 });
+  });
+
+  it('forgets it when the next call starts', async () => {
+    (scheduleCallback as jest.Mock).mockResolvedValue(ok(20));
+    await act(async () => { await latest().callbacks.onFunction({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } }); });
+    expect(hook.callback).not.toBeNull();
+    await act(async () => { hook.stop(); });
+    await act(async () => { await hook.start('manual'); });
+    expect(hook.callback).toBeNull();
+  });
 });

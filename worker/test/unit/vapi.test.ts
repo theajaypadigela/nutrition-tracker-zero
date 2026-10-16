@@ -91,7 +91,7 @@ describe('buildAssistant', () => {
   it('has endCall, no recording, metadata, 10 min cap', () => {
     // Marking a day complete is off for now (domain/features.ts): no tool and no question; the call can be asked to call back.
     expect(a.model.tools.map((t) => ('function' in t ? t.function.name : t.type))).toEqual(['save_foods', 'schedule_callback', 'endCall']);
-    expect(a.model.tools[1]).toMatchObject({ function: { name: 'schedule_callback', parameters: { required: ['minutes'] } } });
+    expect(a.model.tools[1]).toMatchObject({ function: { name: 'schedule_callback', parameters: { required: [], properties: { minutes: { type: 'integer' }, time: { type: 'string' } } } } });
     expect(a.model.tools[2]).toEqual({ type: 'endCall' });
     expect(a.model.messages[0]!.content).not.toContain('Should I mark this day as complete?');
     expect(a.model.messages[0]!.content).toContain('schedule_callback');
@@ -118,10 +118,15 @@ describe('the call-back rule and the closing steps of the prompt', () => {
     expect(prompt).toContain('remind me after 30 minutes');
     expect(prompt).toContain("I'll eat later, call me back");
     expect(prompt).toContain('half an hour is 30, an hour is 60');
+    // a time of day is passed as it was said, in 24-hour form: the phone works out the difference, the model never subtracts
+    expect(prompt).toContain('"at 9 pm" or "at half past eight"');
+    expect(prompt).toContain('give time as 24-hour HH:MM in their local time ("21:00", "20:30")');
+    expect(prompt).toContain('do not work out the difference yourself');
     expect(prompt).toContain('When should I call you back?');
+    expect(prompt).toContain('never ask again once they have given a time or a delay');
     expect(prompt).toContain('(it is 8:50 pm now)');
-    expect(prompt).toContain('First call save_foods for anything they already confirmed, then call schedule_callback');
-    expect(prompt).toContain('Never say a call is scheduled unless schedule_callback has been called');
+    expect(prompt).toContain('First call save_foods for anything they already confirmed, then call schedule_callback.');
+    expect(prompt).toContain('Never say a call is scheduled unless schedule_callback has been called.');
   });
 
   it('numbers the steps without a gap in either mode', () => {

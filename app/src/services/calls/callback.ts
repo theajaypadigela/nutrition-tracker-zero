@@ -5,7 +5,7 @@
  * The one-shot is the operating system's; the record kept here (callbackStore) is how the app shows it, puts it back if the OS lost it,
  * and lets the person cancel it. There is one at a time: asking again replaces it.
  */
-import { callbackClock, callbackDelayWords, callbackReply, parseCallbackMinutes } from '../../../../worker/src/domain/callback';
+import { callbackClock, callbackDelayWords, callbackReply, resolveCallback } from '../../../../worker/src/domain/callback';
 import { loadPendingCallback, savePendingCallback, type PendingCallback } from './callbackStore';
 import { reminderLog } from './logger';
 import { readNativeReminderDiagnostics } from './native';
@@ -32,9 +32,9 @@ export async function scheduleCallback(
   args: unknown,
   opts: { timeZone: string; profileId?: string; now?: number },
 ): Promise<ScheduleResult> {
-  const asked = parseCallbackMinutes(args);
-  if ('error' in asked) return { ok: false, error: asked.error };
   const now = opts.now ?? Date.now();
+  const asked = resolveCallback(args, now, opts.timeZone);
+  if ('error' in asked) return { ok: false, error: asked.error };
   let snapshot;
   try {
     snapshot = await readPermissionSnapshot();
@@ -45,7 +45,8 @@ export async function scheduleCallback(
     reminderLog.warn('callback.notifications_off', 'A call back was asked for with notifications off');
     return { ok: false, error: 'Notifications are turned off for this app, so I cannot call back. Tell them to turn notifications on in Settings, and say you will leave the regular daily call as it is.' };
   }
-  const fireAt = now + asked.minutes * 60_000;
+  // A delay rings that long from now; a time of day rings at the start of that minute, which resolveCallback worked out in the person's zone.
+  const fireAt = asked.at;
   try {
     await armRing({
       id: CALLBACK_TRIGGER_ID,

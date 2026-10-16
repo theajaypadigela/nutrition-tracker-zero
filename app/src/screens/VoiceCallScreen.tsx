@@ -4,10 +4,14 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-
 import { Plus } from 'lucide-react-native';
 import { api } from '@/api/client';
 import type { CallInfo, Item } from '@/api/types';
-import { Badge, Button, Card, Divider, Text } from '@/components/kit';
+import { Badge, Button, Card, Divider, Notice, Text } from '@/components/kit';
 import { EditItemSheet } from '@/components/today/EditItemSheet';
 import VoiceSessionScreen, { type CallStatus } from '@/components/voice/VoiceSessionScreen';
+import { useProfileTimeZone } from '@/hooks/useToday';
 import { useVoiceCall, type VoiceStatus } from '@/hooks/useVoiceCall';
+import { fill } from '@/i18n/fill';
+import { strings } from '@/i18n/strings';
+import { callbackClock, callbackDelayWords } from '../../../worker/src/domain/callback';
 import type { RootStackParamList } from '@/navigation/types';
 import { shouldShield } from '@/services/calls/audioRoute';
 import { setCallScreenShown } from '@/services/calls/native';
@@ -64,7 +68,8 @@ function useCallOutcome(localDate: string | null, providerCallId: string | null,
 export default function VoiceCallScreen() {
   const navigation = useNavigation();
   const { params } = useRoute<RouteProp<RootStackParamList, 'VoiceCall'>>();
-  const { status, error, transcript, isSpeaking, session, audio, setAudioRoute, start, stop } = useVoiceCall();
+  const { status, error, transcript, isSpeaking, session, audio, callback, setAudioRoute, start, stop } = useVoiceCall();
+  const zone = useProfileTimeZone();
   const started = useRef(false);
   const [editing, setEditing] = useState<Item | null>(null);
   const [version, setVersion] = useState(0);
@@ -102,7 +107,16 @@ export default function VoiceCallScreen() {
         doneButtonText="Done"
         onDonePress={() => navigation.goBack()}
         onRetryPress={() => start(params.kind)}
-        outcome={ended ? <Outcome items={outcome.items} call={outcome.call} onOpenItem={setEditing} /> : null}
+        outcome={
+          ended ? (
+            <Outcome
+              items={outcome.items}
+              call={outcome.call}
+              onOpenItem={setEditing}
+              callback={callback ? { clock: callbackClock(callback.fireAt, zone).toUpperCase(), inWords: callbackDelayWords(callback.minutes) } : null}
+            />
+          ) : null
+        }
         audio={audio}
         onSelectAudioRoute={setAudioRoute}
         shielded={status === 'active' && shouldShield(audio)}
@@ -112,8 +126,36 @@ export default function VoiceCallScreen() {
   );
 }
 
+/**
+ * What the call saved, and what comes next. When the person asked to be called again, that comes first, and a call with nothing saved is
+ * not called a failure: they said they would eat later.
+ */
+function Outcome({
+  items,
+  call: callRow,
+  onOpenItem,
+  callback,
+}: {
+  items: Item[] | null;
+  call: CallInfo | null;
+  onOpenItem: (item: Item) => void;
+  callback: { clock: string; inWords: string } | null;
+}) {
+  const deferred = !!callback && items !== null && items.length === 0 && callRow?.status !== 'failed';
+  return (
+    <View style={{ gap: space.md }}>
+      {callback ? (
+        <Notice tone="success" testID="call-callback-note" title={fill(strings.callback.doneTitle, { clock: callback.clock })}>
+          {fill(strings.callback.doneBody, { inWords: callback.inWords })}
+        </Notice>
+      ) : null}
+      {deferred ? null : <SavedItems items={items} call={callRow} onOpenItem={onOpenItem} />}
+    </View>
+  );
+}
+
 /** What the call saved: the items (tap one to fix it), or why nothing was saved and a way to add the food by hand. */
-function Outcome({ items, call: callRow, onOpenItem }: { items: Item[] | null; call: CallInfo | null; onOpenItem: (item: Item) => void }) {
+function SavedItems({ items, call: callRow, onOpenItem }: { items: Item[] | null; call: CallInfo | null; onOpenItem: (item: Item) => void }) {
   const navigation = useNavigation();
   const { colors } = useTheme();
   if (items === null) {

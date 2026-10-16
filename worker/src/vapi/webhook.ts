@@ -1,7 +1,7 @@
 import { WEBHOOK_TOKEN_RE } from '../auth';
 import { HttpError, json, nowIso, readJson } from '../http';
 import { insertItemsStatement, loadIndex, type CallRow, type UserRow } from '../db/queries';
-import { callbackReply, parseCallbackMinutes } from '../domain/callback';
+import { callbackReply, resolveCallback } from '../domain/callback';
 import { FEATURES } from '../domain/features';
 import { parseItemList, prepareItems } from '../domain/items';
 import type { FoodIndex } from '../domain/match';
@@ -80,11 +80,11 @@ async function handleToolCalls(db: D1Database, user: UserRow, call: CallRow | nu
     if (tc.name === SCHEDULE_CALLBACK) {
       // Only the phone can ring itself: the app arms the reminder from the same message. The server's part is to check the minutes and
       // say what the person should hear, the way it answers the other tools. Nothing is stored.
-      const asked = parseCallbackMinutes(tc.arguments);
+      const asked = resolveCallback(tc.arguments, Date.now(), user.timezone);
       results.push(
         'error' in asked
           ? { name: tc.name, toolCallId: tc.id, error: asked.error }
-          : { name: tc.name, toolCallId: tc.id, result: callbackReply(asked.minutes, Date.now() + asked.minutes * 60_000, user.timezone) },
+          : { name: tc.name, toolCallId: tc.id, result: callbackReply(asked.minutes, asked.at, user.timezone) },
       );
       continue;
     }

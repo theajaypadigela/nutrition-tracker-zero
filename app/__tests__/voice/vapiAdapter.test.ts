@@ -3,7 +3,7 @@ const mockBridge = { vapiCallId: null as string | null, onMessage: jest.fn(), fi
 const mockAudio = { start: jest.fn(async () => {}), stop: jest.fn(), setRoute: jest.fn(async () => {}) };
 jest.mock('@/config/local', () => ({ ON_DEVICE: true }));
 jest.mock('@/api/client', () => ({ deliverVapiMessage: jest.fn() }));
-jest.mock('@/embedded/vapi', () => ({ CallBridge: jest.fn(() => mockBridge) }));
+jest.mock('@/embedded/vapi', () => ({ ...jest.requireActual('@/embedded/vapi'), CallBridge: jest.fn(() => mockBridge) }));
 jest.mock('@/services/calls/callAudio', () => ({ createCallAudioSession: () => mockAudio, openOnEarpiece: jest.fn() }));
 jest.mock('@vapi-ai/react-native', () => {
   const { EventEmitter } = require('events');
@@ -72,4 +72,35 @@ it('treats a server hang-up as normal completion', async () => {
   await session.start(); sdk().emit('error', { errorMsg: 'Meeting has ended' }); await flush();
   expect(callbacks.onError).not.toHaveBeenCalled();
   expect(callbacks.onEnded).toHaveBeenCalledWith('assistant-ended-call');
+});
+
+describe('"call me again in 20 minutes" over Vapi', () => {
+  const tool = (id: string | undefined, args: unknown, name = 'schedule_callback') => ({ type: 'tool-calls', toolCallList: [{ ...(id ? { id } : {}), function: { name, arguments: args } }] });
+  it('hands the phone the call back to arm, once per call, whether the server or the app answers the model', async () => {
+    await session.start();
+    sdk().emit('message', tool('cb1', { minutes: 20 }));
+    sdk().emit('message', tool('cb1', { minutes: 20 })); // a repeat of the same message
+    expect(callbacks.onFunction).toHaveBeenCalledTimes(1);
+    expect(callbacks.onFunction).toHaveBeenCalledWith({ id: 'cb1', name: 'schedule_callback', arguments: { minutes: 20 } });
+    sdk().emit('message', tool('cb2', JSON.stringify({ minutes: 45 })));
+    expect(callbacks.onFunction).toHaveBeenLastCalledWith({ id: 'cb2', name: 'schedule_callback', arguments: JSON.stringify({ minutes: 45 }) });
+    // a message with no id is still told apart by what it asks
+    sdk().emit('message', tool(undefined, { minutes: 5 }));
+    sdk().emit('message', tool(undefined, { minutes: 5 }));
+    expect(callbacks.onFunction).toHaveBeenCalledTimes(3);
+  });
+  it('leaves the meal saves to the bridge: only a call back reaches the phone\'s own handler', async () => {
+    await session.start();
+    sdk().emit('message', tool('s1', { items: [] }, 'save_foods'));
+    sdk().emit('message', tool('d1', { confirmed: true }, 'mark_day_complete'));
+    expect(callbacks.onFunction).not.toHaveBeenCalled();
+    expect(mockBridge.onMessage).toHaveBeenCalledTimes(2);
+  });
+  it('does not stop the call when handling it fails', async () => {
+    (callbacks.onFunction as jest.Mock).mockRejectedValueOnce(new Error('could not arm'));
+    await session.start();
+    expect(() => sdk().emit('message', tool('cb1', { minutes: 20 }))).not.toThrow();
+    await flush();
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
 });

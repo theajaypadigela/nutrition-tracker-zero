@@ -8,6 +8,7 @@ import { Button, EmptyState, Fab, IconButton, ListGroup, ListRow, LoadingState, 
 import { HealthCard } from '@/components/health/HealthCard';
 import { TabScreen } from '@/components/layout/TabScreen';
 import { AddMenuSheet } from '@/components/today/AddMenuSheet';
+import { CallbackCard } from '@/components/today/CallbackCard';
 import { CheckinCard } from '@/components/today/CheckinCard';
 import { DayStatusSheet } from '@/components/today/DayStatusSheet';
 import { EditItemSheet } from '@/components/today/EditItemSheet';
@@ -17,7 +18,8 @@ import { NoListCallCard } from '@/components/today/NoListCallCard';
 import { SummaryCard } from '@/components/today/SummaryCard';
 import { useAsync } from '@/hooks/useAsync';
 import { useHealthCard } from '@/hooks/useHealthCard';
-import { useToday } from '@/hooks/useToday';
+import { usePendingCallback } from '@/hooks/usePendingCallback';
+import { useProfileTimeZone, useToday } from '@/hooks/useToday';
 import { strings, where } from '@/i18n/strings';
 import type { TabParamList } from '@/navigation/types';
 import { FEATURES } from '@/config/features';
@@ -35,6 +37,7 @@ export default function TodayScreen() {
   const healthCard = useHealthCard();
   const settings = useAsync(() => api.getSettings(), []);
   const today = useToday();
+  const pendingCallback = usePendingCallback(useProfileTimeZone());
   const route = useRoute<RouteProp<TabParamList, 'Today'>>();
   const [date, setDate] = useState<string | null>(null);
   const shown = date ?? today;
@@ -240,6 +243,14 @@ export default function TodayScreen() {
         {noList.map(c => (
           <NoListCallCard key={c.id} call={c} date={shown} />
         ))}
+
+        {pendingCallback.described ? (
+          <CallbackCard
+            clock={pendingCallback.described.clock}
+            inWords={pendingCallback.described.inWords}
+            onCancel={() => pendingCallback.cancel().catch(() => Alert.alert(strings.callback.cancelFailed))}
+          />
+        ) : null}
 
         {settings.data ? (
           <CheckinCard

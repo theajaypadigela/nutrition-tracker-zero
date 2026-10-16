@@ -12,13 +12,18 @@ import org.json.JSONArray
 
 /** Persisted one-shot alarms: the receiver arms tomorrow BEFORE starting today's ring service.
  * Repeating AlarmManager alarms are inexact; chaining one-shots retains exactness in Doze.
- * SharedPreferences commit + synchronized methods prevent save/disable/delivery races. */
+ * SharedPreferences commit + synchronized methods prevent save/disable/delivery races.
+ *
+ * Three ids: "call-daily" (repeats), "call-test" (a five-second check) and "call-later", the one call the person asked for during a call
+ * ("call me again in 20 minutes"): a one-shot like the test call, but one that is kept across a reboot or an app update until it rings
+ * (restore() re-arms every one-shot that is still in the future), and replaced by the next ask. The payload (meal or habit, with its copy)
+ * is relayed untouched, so a habit reminder is called back exactly like a meal call. */
 object NativeCallScheduler {
   const val ACTION_FIRE = "com.nutritiontrackerzero.SCHEDULED_CALL"
   private const val PREFS = "native_call_schedule_v1"
   private const val EXTRA_ID = "scheduleId"
   private const val EXTRA_FIRE_AT = "scheduledFireAt"
-  private val IDS = listOf("call-daily", "call-test")
+  private val IDS = listOf("call-daily", "call-test", "call-later")
   private const val STALE_MS = 5 * 60 * 1000L
 
   private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -158,8 +163,15 @@ object NativeCallScheduler {
     am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAt, operation)
   }
 
+  /** One request code per id, so replacing one schedule never replaces another's alarm. */
+  private fun requestCode(id: String): Int = when (id) {
+    "call-daily" -> 41
+    "call-later" -> 44
+    else -> 42
+  }
+
   private fun operation(context: Context, id: String, fireAt: Long, flags: Int): PendingIntent? =
-    PendingIntent.getBroadcast(context, if (id == "call-daily") 41 else 42,
+    PendingIntent.getBroadcast(context, requestCode(id),
       Intent(context, ScheduledCallReceiver::class.java).apply {
         action = ACTION_FIRE
         putExtra(EXTRA_ID, id)

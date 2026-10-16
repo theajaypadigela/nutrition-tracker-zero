@@ -11,26 +11,37 @@ export const CALLBACK_TOOL = 'schedule_callback';
 export const CALLBACK_MIN_MINUTES = 1;
 export const CALLBACK_MAX_MINUTES = 720;
 
-/** The tool, in the provider-neutral form both Deepgram's `think.functions` and Vapi's `function` take. */
+/**
+ * The tool, in the provider-neutral form both Deepgram's `think.functions` and Vapi's `function` take. A call back is asked for either as a
+ * delay ("in 20 minutes": `minutes`) or as a time of day ("at nine pm": `time`); the model gives whichever the person said, and the phone
+ * works out the rest, so the model never has to subtract clock times.
+ */
 export const CALLBACK_FUNCTION = {
   name: CALLBACK_TOOL,
   description:
-    'Call this person again later, a number of minutes from now, when they ask to be called back ("call me again in 20 minutes", "remind me after 30 minutes", "I will eat later, call me in an hour"). Convert what they said into whole minutes.',
+    'Call this person again later, when they ask to be called back ("call me again in 20 minutes", "remind me after 30 minutes", "I will eat later, call me in an hour", "call me at nine pm"). Give `minutes` when they say how long to wait, or `time` when they say a time of day. Give exactly one of the two.',
   parameters: {
     type: 'object',
-    required: ['minutes'],
+    required: [],
     properties: {
       minutes: {
         type: 'integer',
         minimum: CALLBACK_MIN_MINUTES,
         maximum: CALLBACK_MAX_MINUTES,
-        description: 'Whole minutes from now until the call back: "in 20 minutes" is 20, "in half an hour" is 30, "in an hour" is 60, "in two hours" is 120.',
+        description: 'Whole minutes from now, when they say how long: "in 20 minutes" is 20, "in half an hour" is 30, "in an hour" is 60, "in two hours" is 120.',
+      },
+      time: {
+        type: 'string',
+        description: 'A time of day in 24-hour HH:MM, in their own local time, when they say a clock time: "at nine pm" is "21:00", "at half past eight in the evening" is "20:30", "at 7" in the morning is "07:00".',
       },
     },
   },
 } as const;
 
 export type CallbackRequest = { minutes: number } | { error: string };
+
+/** A call back worked out: how many minutes from now, and the exact moment it rings. */
+export type CallbackPlan = { minutes: number; at: number } | { error: string };
 
 function asArguments(raw: unknown): Record<string, unknown> | null {
   let value = raw;
@@ -61,6 +72,53 @@ export function parseCallbackMinutes(raw: unknown): CallbackRequest {
     return { error: `I can only call back within ${CALLBACK_MAX_MINUTES / 60} hours. Offer a shorter time; the regular daily call will still come at its usual time.` };
   }
   return { minutes };
+}
+
+/** Minutes since local midnight at `at` in `timeZone`. */
+function localMinutesOfDay(at: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(at));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return (get('hour') % 24) * 60 + get('minute');
+}
+
+/**
+ * Whole minutes from `now` to the next time the clock in `timeZone` reads `hhmm` ("21:00"), never zero: this very minute means the next day.
+ * Null when `hhmm` is not a time of day. Worked out against the zone's own clock, so a night the clocks change comes out right.
+ */
+export function minutesUntilClock(hhmm: string, now: number, timeZone: string): number | null {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm.trim());
+  if (!m) return null;
+  const target = Number(m[1]) * 60 + Number(m[2]);
+  let minutes = (target - localMinutesOfDay(now, timeZone) + 1440) % 1440 || 1440;
+  // Where that lands on the clock, after any change of the clocks in between: nudge by what is left over (at most a couple of passes).
+  for (let pass = 0; pass < 3; pass++) {
+    const landed = localMinutesOfDay(now + minutes * 60_000, timeZone);
+    const off = ((target - landed + 720 + 1440) % 1440) - 720;
+    if (off === 0) break;
+    minutes += off;
+  }
+  return minutes;
+}
+
+/**
+ * What the model asked for, as a plan: `minutes` from now (an exact delay), or `time` of day (the next time the clock reads it, which rings
+ * at the start of that minute). The same limits as `parseCallbackMinutes`: at least a minute away, at most twelve hours.
+ */
+export function resolveCallback(raw: unknown, now: number, timeZone: string): CallbackPlan {
+  const args = asArguments(raw);
+  const time = typeof args?.time === 'string' ? args.time : null;
+  const hasMinutes = args !== null && (args.minutes ?? args.delayMinutes ?? args.delay_minutes) !== undefined && (args.minutes ?? args.delayMinutes ?? args.delay_minutes) !== null;
+  if (time !== null && !hasMinutes) {
+    const wait = minutesUntilClock(time, now, timeZone);
+    if (wait === null) return { error: 'I could not read that time. Ask what time they would like the call, and give it as hours and minutes in 24-hour form, for example 21:00.' };
+    if (wait > CALLBACK_MAX_MINUTES) {
+      return { error: `That is more than ${CALLBACK_MAX_MINUTES / 60} hours away. Offer a time within ${CALLBACK_MAX_MINUTES / 60} hours; the regular daily call will still come at its usual time.` };
+    }
+    const minuteStart = Math.floor(now / 60_000) * 60_000;
+    return { minutes: wait, at: minuteStart + wait * 60_000 };
+  }
+  const asked = parseCallbackMinutes(raw);
+  return 'error' in asked ? asked : { minutes: asked.minutes, at: now + asked.minutes * 60_000 };
 }
 
 /** "20 minutes", "1 minute", "1 hour", "1 hour 30 minutes", "2 hours": how long it will be, as the person would say it. */

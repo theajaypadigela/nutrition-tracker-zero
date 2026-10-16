@@ -4,11 +4,16 @@ import UserNotifications
 /// The system delivers repeating calendar reminders even when the app has been swiped away.
 /// This is the free local-notification path: there is no APNs token, server job, or VoIP push.
 /// The delegate is installed before React Native; answers are durable while the bundle loads.
+///
+/// Three ids: `call-daily` (repeats), `call-test` (a five-second check) and `call-later`, the one call the person asked for during a call
+/// ("call me again in 20 minutes"). The last two are one-shot calendar notifications at an exact date; iOS keeps pending requests across
+/// app termination and a restart, so a call back still comes with the app closed. Asking again replaces it (same identifier), and an
+/// unchanged request is kept as it is, so the app resuming cannot invalidate a notification that is about to be tapped.
 final class NativeCallScheduler: NSObject, UNUserNotificationCenterDelegate {
   static let shared = NativeCallScheduler()
   private let center = UNUserNotificationCenter.current()
   private let defaults = UserDefaults.standard
-  private let ids = ["call-daily", "call-test"]
+  private let ids = ["call-daily", "call-test", "call-later"]
   private let prefix = "native-"
   private let category = "food-check-in"
 
@@ -66,8 +71,10 @@ final class NativeCallScheduler: NSObject, UNUserNotificationCenterDelegate {
       guard let next = trigger.nextTriggerDate() else { throw failure("No next reminder occurrence") }
       let revision = UUID().uuidString
       let content = UNMutableNotificationContent()
-      content.title = "Food check-in"
-      content.body = "What did you eat today? Tap to start your voice log."
+      // A call back says so; the daily and test reminders keep their words. The strings come from the app and are bounded.
+      let words = options["notification"] as? [String: Any]
+      content.title = (words?["title"] as? String).map { String($0.prefix(80)) } ?? "Food check-in"
+      content.body = (words?["body"] as? String).map { String($0.prefix(200)) } ?? "What did you eat today? Tap to start your voice log."
       content.sound = .default
       content.categoryIdentifier = category
       // Normal local sound notifications work with free signing. Time Sensitive / Critical
@@ -77,6 +84,8 @@ final class NativeCallScheduler: NSObject, UNUserNotificationCenterDelegate {
       if repeating {
         content.userInfo["callTime"] = options["callTime"]
         content.userInfo["timezone"] = options["timezone"]
+      } else {
+        content.userInfo["fireAt"] = fireAt
       }
       let request = UNNotificationRequest(identifier: prefix + id, content: content, trigger: trigger)
       center.getPendingNotificationRequests { [self] pending in
@@ -88,6 +97,15 @@ final class NativeCallScheduler: NSObject, UNUserNotificationCenterDelegate {
           let next = calendarTrigger.nextTriggerDate() {
           // Resuming/cold launching from a tap must not invalidate that notification's revision
           // or cancel an occurrence at the current minute. An unchanged daily request is kept.
+          completion(.success(next.timeIntervalSince1970 * 1_000))
+          return
+        }
+        // The same for a one-shot (a call back asked for earlier): the app re-asking for the very same moment keeps the request.
+        if !repeating, let existing = pending.first(where: { $0.identifier == request.identifier }),
+          let was = existing.content.userInfo["fireAt"] as? Double, abs(was - fireAt) < 1,
+          existing.content.userInfo["revision"] as? String == defaults.string(forKey: "reminder-revision-" + id),
+          let calendarTrigger = existing.trigger as? UNCalendarNotificationTrigger,
+          let next = calendarTrigger.nextTriggerDate() {
           completion(.success(next.timeIntervalSince1970 * 1_000))
           return
         }
