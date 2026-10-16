@@ -4,7 +4,6 @@ import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { api, errorMessage } from '@/api/client';
 import { getProfileZone } from '@/api/zone';
 import type { CallKind } from '@/api/types';
-import { deviceTimeZone } from '@/components/TimezoneField';
 import { CALLBACK_TOOL, scheduleCallback } from '@/services/calls/callback';
 import { cancelAutoRetry, consumePendingHangup, dismissIncomingCall, subscribeToNativeCallEvents } from '@/services/calls/native';
 import type { AudioRoute, CallAudioState } from '@/services/calls/audioRoute';
@@ -107,7 +106,7 @@ export function useVoiceCall() {
                 const known = callbackAnswers.get(call.id);
                 if (known) return known;
                 const zone = getProfileZone();
-                const answer = scheduleCallback(call.arguments, { timeZone: zone?.zone ?? deviceTimeZone(), profileId: zone?.userId })
+                const answer = scheduleCallback(call.arguments, { timeZone: zone?.zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, profileId: zone?.userId })
                   .then((outcome): Record<string, unknown> => {
                     if (!outcome.ok) return { error: outcome.error };
                     if (valid()) setCallback({ fireAt: outcome.fireAt, minutes: outcome.minutes });

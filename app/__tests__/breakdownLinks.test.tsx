@@ -11,7 +11,7 @@ jest.mock('@react-navigation/native', () => {
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@react-native-community/datetimepicker', () => 'DatePicker');
-jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-17' }));
+jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-17', useProfileTimeZone: () => 'Asia/Kolkata' }));
 jest.mock('@/hooks/useHealthCard', () => ({ useHealthCard: () => ({ visible: false, dismiss: jest.fn() }) }));
 jest.mock('@/hooks/useWeightPrompt', () => ({ useWeightPrompt: () => ({ visible: false, dismiss: jest.fn() }) }));
 jest.mock('@/hooks/useRangeReport', () => ({ useRangeReport: jest.fn() }));

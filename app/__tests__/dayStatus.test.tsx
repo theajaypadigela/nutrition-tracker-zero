@@ -10,7 +10,7 @@ jest.mock('@react-navigation/native', () => {
   return { useNavigation: () => nav, useIsFocused: () => true, useRoute: jest.fn(() => ({ params: {} })), useFocusEffect: jest.fn(), __nav: nav };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
-jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-11' }));
+jest.mock('@/hooks/useToday', () => ({ useToday: () => '2026-10-11', useProfileTimeZone: () => 'Asia/Kolkata' }));
 jest.mock('@/hooks/useHealthCard', () => ({ useHealthCard: () => ({ visible: false, dismiss: jest.fn() }) }));
 jest.mock('@/state/HealthContext', () => ({ useHealth: jest.fn() }));
 jest.mock('@/state/MetaContext', () => ({ useMeta: jest.fn() }));
